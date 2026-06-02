@@ -3,8 +3,8 @@ import { ArrowRight } from 'lucide-react';
 
 export default function LifecycleFlow({ kpis }) {
   const flowNodes = [
-    { label: 'Piglets', count: kpis.nursingPiglets, bg: 'bg-primary/20', border: 'border-primary', text: 'text-primary' },
-    { label: 'Growers', count: kpis.breakdown?.growers || 0, bg: 'bg-info/20', border: 'border-info', text: 'text-info' },
+    { label: 'Lactating Piglets', count: kpis.nursingPiglets, bg: 'bg-primary/20', border: 'border-primary', text: 'text-primary' },
+    { label: 'Weaned Piglets', count: kpis.breakdown?.growers || 0, bg: 'bg-info/20', border: 'border-info', text: 'text-info' },
     { label: 'Sows & Boars', count: (kpis.breakdown?.sows || 0) + (kpis.breakdown?.boars || 0), bg: 'bg-warning/20', border: 'border-warning', text: 'text-warning' },
     { label: 'Breeding', count: kpis.sowsInHeat + kpis.breedingReadyBoars, bg: 'bg-danger/20', border: 'border-danger', text: 'text-danger' },
     { label: 'Pregnancy', count: kpis.pregnantSows, bg: 'bg-success/20', border: 'border-success', text: 'text-success' },

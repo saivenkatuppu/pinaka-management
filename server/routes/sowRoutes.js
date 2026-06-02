@@ -1,7 +1,6 @@
 import express from 'express';
 import {
-  createSow,
-  importFromGrower,
+  importFromPiglet,
   getSows,
   getSowById,
   addHeatRecord,
@@ -9,7 +8,9 @@ import {
   confirmPregnancy,
   addFarrowingRecord,
   addTreatmentRecord,
-  getHeatAlerts
+  getHeatAlerts,
+  moveToFattening,
+  activateSow
 } from '../controllers/sowController.js';
 import { protect, restrictTo } from '../middleware/authMiddleware.js';
 
@@ -23,10 +24,10 @@ router.get('/heat-alerts', getHeatAlerts);
 
 // Base REST routes
 router.route('/')
-  .get(getSows)
-  .post(restrictTo('Admin', 'Farm Worker'), createSow);
+  .get(getSows);
 
-router.post('/import-grower', restrictTo('Admin', 'Farm Worker'), importFromGrower);
+router.post('/import-piglet', restrictTo('Admin', 'Farm Worker'), importFromPiglet);
+router.post('/activate-animal', restrictTo('Admin', 'Farm Worker'), activateSow);
 
 router.route('/:id')
   .get(getSowById);
@@ -37,5 +38,6 @@ router.post('/:id/breeding', restrictTo('Admin', 'Farm Worker'), addBreedingReco
 router.post('/:id/pregnancy', restrictTo('Admin', 'Farm Worker'), confirmPregnancy);
 router.post('/:id/farrowing', restrictTo('Admin', 'Farm Worker'), addFarrowingRecord);
 router.post('/:id/treatment', restrictTo('Admin', 'Farm Worker', 'Veterinarian'), addTreatmentRecord);
+router.post('/:id/move-to-fattening', restrictTo('Admin', 'Farm Worker'), moveToFattening);
 
 export default router;

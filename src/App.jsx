@@ -5,8 +5,8 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import ProtectedRoute from './components/layout/ProtectedRoute';
 import MainLayout from './components/layout/MainLayout';
-import GrowerRecord from './pages/GrowerRecord';
-import GrowerDetailPage from './features/growers/pages/GrowerDetailPage';
+import PigletRecord from './pages/PigletRecord';
+import PigletDetailPage from './features/piglets/pages/PigletDetailPage';
 import SowRecord from './pages/SowRecord';
 import SowDetailPage from './features/sows/pages/SowDetailPage';
 import BoarRecord from './pages/BoarRecord';
@@ -24,6 +24,7 @@ import MedicineRecord from './pages/MedicineRecord';
 import MortalityRecord from './pages/MortalityRecord';
 import SaleRecord from './pages/SaleRecord';
 import Settings from './pages/Settings';
+import FarmStructureRecord from './pages/FarmStructureRecord';
 
 // View Placeholder wrapped in our high-fidelity MainLayout
 const ViewPlaceholder = ({ title }) => (
@@ -65,8 +66,8 @@ export default function App() {
         
         {/* Core Sidebar Modules */}
         <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/growers" element={<ProtectedRoute><GrowerRecord /></ProtectedRoute>} />
-        <Route path="/growers/:id" element={<ProtectedRoute><GrowerDetailPage /></ProtectedRoute>} />
+        <Route path="/piglets" element={<ProtectedRoute><PigletRecord /></ProtectedRoute>} />
+        <Route path="/piglets/:id" element={<ProtectedRoute><PigletDetailPage /></ProtectedRoute>} />
         <Route path="/sows" element={<ProtectedRoute><SowRecord /></ProtectedRoute>} />
         <Route path="/sows/:id" element={<ProtectedRoute><SowDetailPage /></ProtectedRoute>} />
         <Route path="/boars" element={<ProtectedRoute><BoarRecord /></ProtectedRoute>} />
@@ -84,6 +85,7 @@ export default function App() {
         <Route path="/mortality" element={<ProtectedRoute><MortalityRecord /></ProtectedRoute>} />
         <Route path="/sales" element={<ProtectedRoute><SaleRecord /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+        <Route path="/structure" element={<ProtectedRoute><FarmStructureRecord /></ProtectedRoute>} />
 
         {/* Fallback Catch-all Route */}
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -14,10 +14,9 @@ export default function IdManagementTab() {
   };
 
   const fields = [
-    { name: 'growerPrefix', label: 'Grower Prefix', desc: 'Example: G-101' },
     { name: 'sowPrefix', label: 'Sow Prefix', desc: 'Example: S-101' },
     { name: 'boarPrefix', label: 'Boar Prefix', desc: 'Example: B-101' },
-    { name: 'pigletPrefix', label: 'Piglet Prefix', desc: 'Example: PIG-0001' },
+    { name: 'pigletPrefix', label: 'Piglet Prefix', desc: 'Example: P-0001' },
     { name: 'farrowingPrefix', label: 'Farrowing Prefix', desc: 'Example: FW-001' },
     { name: 'mortalityPrefix', label: 'Mortality Prefix', desc: 'Example: MORT-001' },
   ];

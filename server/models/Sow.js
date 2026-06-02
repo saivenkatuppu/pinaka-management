@@ -187,7 +187,7 @@ const SowSchema = new mongoose.Schema({
     uppercase: true
   },
   dob: {
-    type: Date,
+    type: mongoose.Schema.Types.Mixed,
     required: [true, 'Date of Birth is required']
   },
   breed: {
@@ -269,9 +269,14 @@ const SowSchema = new mongoose.Schema({
     type: String,
     default: 'Direct'
   },
-  growerId: {
+  purpose: {
+    type: String,
+    enum: ['Breeding', 'Fattening'],
+    default: 'Breeding'
+  },
+  pigletRef: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Grower'
+    ref: 'Piglet'
   },
   isDeleted: {
     type: Boolean,

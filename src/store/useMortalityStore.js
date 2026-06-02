@@ -73,17 +73,17 @@ export const useMortalityStore = create((set, get) => ({
       let animalType = data.animalType || 'Grower';
       let sourceModule = data.sourceModule || 'Animal Registry';
 
-      // Scan Grower
+      // Scan Piglet
       try {
-        const growers = JSON.parse(localStorage.getItem('pinaka_growers') || '[]');
-        const match = growers.find(g => g.animalNo.toUpperCase() === data.animalId.toUpperCase());
+        const piglets = JSON.parse(localStorage.getItem('pinaka_piglets') || '[]');
+        const match = piglets.find(p => p.animalNo.toUpperCase() === data.animalId.toUpperCase());
         if (match) {
           breed = match.breed;
           sex = match.sex;
-          penNumber = match.penNo;
-          lifecycleStage = 'Grower';
-          animalType = 'Grower';
-          sourceModule = 'Grower Record';
+          penNumber = match.penNo || match.penNumber || '—';
+          lifecycleStage = 'Piglet';
+          animalType = 'Piglet';
+          sourceModule = 'Piglet Record';
         }
       } catch (e) {}
 
@@ -230,23 +230,23 @@ export const useMortalityStore = create((set, get) => ({
         console.error("Mortality Boar sync failed:", err);
       }
 
-      // 6. Sync with Grower Store
+      // 6. Sync with Piglet Store
       try {
-        const { useGrowerStore } = await import('./useGrowerStore');
-        const growerStore = useGrowerStore.getState();
-        const targetGrower = growerStore.growers.find(g => g.animalNo.toUpperCase() === data.animalId.toUpperCase());
-        if (targetGrower || true) {
-          const growersList = JSON.parse(localStorage.getItem('pinaka_growers') || '[]');
-          const updatedGrowers = growersList.map(g => 
+        const { usePigletStore } = await import('./usePigletStore');
+        const pigletStore = usePigletStore.getState();
+        const targetPiglet = pigletStore.piglets.find(g => g.animalNo.toUpperCase() === data.animalId.toUpperCase());
+        if (targetPiglet || true) {
+          const pigletsList = JSON.parse(localStorage.getItem('pinaka_piglets') || '[]');
+          const updatedPiglets = pigletsList.map(g => 
             g.animalNo.toUpperCase() === data.animalId.toUpperCase() 
               ? { ...g, status: 'Dead' } 
               : g
           );
-          localStorage.setItem('pinaka_growers', JSON.stringify(updatedGrowers));
-          await growerStore.fetchGrowers();
+          localStorage.setItem('pinaka_piglets', JSON.stringify(updatedPiglets));
+          await pigletStore.fetchPiglets();
         }
       } catch (err) {
-        console.error("Mortality Grower sync failed:", err);
+        console.error("Mortality Piglet sync failed:", err);
       }
 
       set({ mortalities: updatedList, loading: false });

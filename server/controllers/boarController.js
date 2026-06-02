@@ -1,112 +1,51 @@
 import Boar from '../models/Boar.js';
-import Grower from '../models/Grower.js';
+import Piglet from '../models/Piglet.js';
+import Animal from '../models/Animal.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import ApiResponse from '../utils/apiResponse.js';
 import CustomError from '../utils/customError.js';
 
-// @desc    Register a new Boar manually
-// @route   POST /api/boars
+// @desc    Import/Promote Male Piglet to Boar
+// @route   POST /api/boars/import-piglet
 // @access  Private
-export const createBoar = asyncHandler(async (req, res, next) => {
-  const { 
-    animalNo, 
-    dob, 
-    breed, 
-    sireNo, 
-    damNo, 
-    birthWeight, 
-    latestWeight, 
-    penNo, 
-    notes, 
-    pubertyDate, 
-    diseaseTestResult, 
-    congenitalDefects, 
-    rudimentaryTeats, 
-    breedingStatus, 
-    status 
-  } = req.body;
+export const importFromPiglet = asyncHandler(async (req, res, next) => {
+  const { pigletId, purpose, castrationStatus, notes } = req.body;
 
-  const exists = await Boar.findOne({ animalNo: animalNo.toUpperCase().trim() });
+  const piglet = await Piglet.findById(pigletId);
+  if (!piglet) {
+    return next(new CustomError('Piglet record not found.', 404));
+  }
+
+  if (piglet.sex !== 'Male') {
+    return next(new CustomError('Only male piglets can be promoted to Boar.', 400));
+  }
+
+  const exists = await Boar.findOne({ animalNo: piglet.animalNo });
   if (exists) {
-    return next(new CustomError(`Animal tag '${animalNo}' already registered in Boar database.`, 400));
+    return next(new CustomError(`Piglet '${piglet.animalNo}' is already registered in the Boar records.`, 400));
   }
 
-  const boar = new Boar({
-    animalNo: animalNo.toUpperCase().trim(),
-    dob,
-    breed,
-    sireNo: sireNo || 'UNKNOWN',
-    damNo: damNo || 'UNKNOWN',
-    birthWeight: Number(birthWeight || 1.5),
-    latestWeight: Number(latestWeight || birthWeight || 1.5),
-    penNo,
-    notes: notes || '',
-    status: status || 'Active',
-    pubertyDate,
-    diseaseTestResult: diseaseTestResult || 'Negative',
-    congenitalDefects: congenitalDefects || 'None',
-    rudimentaryTeats: Number(rudimentaryTeats || 0),
-    breedingStatus: breedingStatus || 'Growing',
-    source: 'Direct',
-    createdBy: req.user?._id
-  });
-
-  // Push initial status history
-  boar.statusHistory.push({
-    previousStatus: 'None',
-    newStatus: status || 'Active',
-    updatedBy: req.user?.name || 'System',
-    notes: 'Initial manual registration of Boar breeder.',
-    date: new Date()
-  });
-
-  await boar.save();
-
-  res.status(201).json(ApiResponse.success(boar, 'Boar registered successfully.'));
-});
-
-// @desc    Import/Promote Male Grower to Boar
-// @route   POST /api/boars/import-grower
-// @access  Private
-export const importFromGrower = asyncHandler(async (req, res, next) => {
-  const { growerId, notes } = req.body;
-
-  const grower = await Grower.findById(growerId);
-  if (!grower) {
-    return next(new CustomError('Grower record not found.', 404));
-  }
-
-  if (grower.sex !== 'Male') {
-    return next(new CustomError('Only male growers can be promoted to Boar.', 400));
-  }
-
-  // Validate Age: >= 150 days
-  const dob = new Date(grower.dob);
-  const ageInDays = Math.ceil((Date.now() - dob.getTime()) / (1000 * 60 * 60 * 24));
-  if (ageInDays < 150) {
-    return next(new CustomError(`Grower is only ${ageInDays} days old. Promotion requires a minimum age of 150 days.`, 400));
-  }
-
-  const exists = await Boar.findOne({ animalNo: grower.animalNo });
-  if (exists) {
-    return next(new CustomError(`Grower '${grower.animalNo}' is already registered in the Boar records.`, 400));
-  }
+  const finalCastrationStatus = castrationStatus || 'Not Castrated';
+  const finalPurpose = finalCastrationStatus === 'Castrated' ? 'Fattening' : (purpose || 'Breeding');
+  const finalBreedingStatus = finalPurpose === 'Fattening' ? 'Retired' : 'Growing';
 
   // Create Boar Record
   const boar = new Boar({
-    animalNo: grower.animalNo,
-    dob: grower.dob,
-    breed: grower.breed,
-    sireNo: grower.sireNo || 'UNKNOWN',
-    damNo: grower.damNo || 'UNKNOWN',
-    birthWeight: grower.birthWeight,
-    latestWeight: grower.latestWeight || grower.birthWeight,
-    penNo: grower.penNo,
+    animalNo: piglet.animalNo,
+    dob: piglet.dob,
+    breed: piglet.breed,
+    sireNo: piglet.sireNo || 'UNKNOWN',
+    damNo: piglet.damNo || 'UNKNOWN',
+    birthWeight: piglet.birthWeight,
+    latestWeight: piglet.latestWeight || piglet.birthWeight,
+    penNo: piglet.penNo,
     status: 'Active',
-    breedingStatus: 'Growing',
-    source: 'GrowerPromotion',
-    growerId: grower._id,
-    notes: notes || grower.notes || 'Imported and promoted from Grower Module.',
+    purpose: finalPurpose,
+    castrationStatus: finalCastrationStatus,
+    breedingStatus: finalBreedingStatus,
+    source: 'WeaningPromotion',
+    pigletRef: piglet._id,
+    notes: notes || piglet.notes || 'Imported and promoted from Piglet Module.',
     createdBy: req.user?._id
   });
 
@@ -115,48 +54,101 @@ export const importFromGrower = asyncHandler(async (req, res, next) => {
     previousStatus: 'None',
     newStatus: 'Active',
     updatedBy: req.user?.name || 'System',
-    notes: 'Promoted from grower record and imported.',
+    notes: 'Promoted from piglet record and imported.',
     date: new Date()
   });
 
   boar.promotionHistory.push({
-    growerId: grower._id,
-    animalNo: grower.animalNo,
+    pigletRef: piglet._id,
+    animalNo: piglet.animalNo,
     promotedAt: new Date(),
     promotedBy: req.user?.name || 'System',
-    notes: notes || 'Grower promoted to breeding registry.'
+    notes: notes || 'Piglet promoted to breeding registry.'
   });
 
   await boar.save();
 
-  // Update Grower Status
-  const previousStatus = grower.status;
-  grower.status = 'Promoted to Boar';
-  grower.statusHistory.push({
+  // Update Piglet Status
+  const previousStatus = piglet.status;
+  piglet.promotedTo = 'Boar';
+  piglet.promotedAt = new Date();
+  piglet.boarId = boar._id;
+  piglet.statusHistory.push({
     previousStatus,
-    newStatus: 'Promoted to Boar',
+    newStatus: 'Pending Profile Completion',
     updatedBy: req.user?.name || 'System',
-    notes: 'Promoted and moved to Boar breeding records.',
+    notes: 'Promoted to Boar operational records.',
     updatedAt: new Date()
   });
 
-  grower.promotionHistory.push({
+  piglet.promotionHistory.push({
     type: 'Boar',
     promotedAt: new Date(),
     promotedBy: req.user?.name || 'System',
-    destinationModule: 'Boar Breeding'
+    destinationModule: finalPurpose === 'Fattening' ? 'Boar Fattening' : 'Boar Breeding'
   });
 
-  await grower.save();
+  await piglet.save();
 
-  res.status(201).json(ApiResponse.success({ boar, grower }, 'Male grower successfully promoted and imported to Boars.'));
+  // Sync with Master Animal Record
+  const masterAnimal = await Animal.findOne({ animalNo: piglet.animalNo });
+  if (masterAnimal) {
+    masterAnimal.animalType = 'Boar';
+    masterAnimal.lifecycleStage = 'Boar';
+    masterAnimal.moduleAssignment = 'Boar';
+    masterAnimal.boarRef = boar._id;
+    masterAnimal.purpose = finalPurpose;
+    masterAnimal.castrationStatus = finalCastrationStatus === 'Castrated' ? 'Castrated' : 'Not Castrated';
+    await masterAnimal.save();
+  }
+
+  res.status(201).json(ApiResponse.success({ boar, piglet }, 'Male piglet successfully promoted and imported to Boars.'));
 });
+
+
 
 // @desc    Get all Boars with optional queries
 // @route   GET /api/boars
 // @access  Private
 export const getBoars = asyncHandler(async (req, res, next) => {
   const { search, status, breed, penNo, breedingStatus } = req.query;
+
+  // ─── AUTO-SYNC missing Boars from Animal Registry ───
+  try {
+    const activeBreedingAnimalBoars = await Animal.find({
+      animalType: 'Boar',
+      purpose: 'Breeding',
+      operationalStatus: 'Active',
+      isDeleted: false
+    });
+
+    for (const animal of activeBreedingAnimalBoars) {
+      const existingBoar = await Boar.findOne({ animalNo: animal.animalNo });
+      if (!existingBoar) {
+        const boar = await Boar.create({
+          animalNo: animal.animalNo,
+          dob: animal.dob,
+          breed: animal.breed,
+          sireNo: animal.sireNo || 'UNKNOWN',
+          damNo: animal.damNo || 'UNKNOWN',
+          birthWeight: animal.currentWeight || 1.5,
+          latestWeight: animal.currentWeight || 1.5,
+          penNo: animal.currentPen || 'Unassigned',
+          status: 'Active',
+          castrationStatus: animal.castrationStatus || 'Not Castrated',
+          purpose: 'Breeding',
+          breedingStatus: 'Growing',
+          notes: 'Auto-created and synced from Animal Registry.',
+          createdBy: req.user?._id
+        });
+        animal.boarRef = boar._id;
+        await animal.save();
+      }
+    }
+  } catch (syncErr) {
+    console.error('Boar getBoars background auto-sync failed:', syncErr);
+  }
+
   const query = { isDeleted: false };
 
   if (status) query.status = status;
@@ -177,13 +169,44 @@ export const getBoars = asyncHandler(async (req, res, next) => {
   res.status(200).json(ApiResponse.success(boars, 'Boar records retrieved successfully.'));
 });
 
-// @desc    Get Boar by ID
-// @route   GET /api/boars/:id
-// @access  Private
 export const getBoarById = asyncHandler(async (req, res, next) => {
-  const boar = await Boar.findById(req.params.id);
-  if (!boar || boar.isDeleted) {
-    return next(new CustomError('Boar record not found.', 404));
+  let boar = null;
+  const isObjectId = typeof req.params.id === 'string' && req.params.id.match(/^[0-9a-fA-F]{24}$/);
+
+  if (isObjectId) {
+    boar = await Boar.findOne({ $or: [{ _id: req.params.id }, { animalNo: req.params.id }], isDeleted: false });
+  } else {
+    boar = await Boar.findOne({ animalNo: req.params.id, isDeleted: false });
+  }
+
+  if (!boar) {
+    const animalQuery = isObjectId 
+      ? { $or: [{ _id: req.params.id }, { animalNo: req.params.id }], isDeleted: false }
+      : { animalNo: req.params.id, isDeleted: false };
+
+    const animal = await Animal.findOne(animalQuery);
+    if (animal && animal.animalType === 'Boar' && animal.purpose === 'Breeding') {
+      boar = await Boar.create({
+        animalNo: animal.animalNo,
+        dob: animal.dob,
+        breed: animal.breed,
+        sireNo: animal.sireNo || 'UNKNOWN',
+        damNo: animal.damNo || 'UNKNOWN',
+        birthWeight: animal.currentWeight || 1.5,
+        latestWeight: animal.currentWeight || 1.5,
+        penNo: animal.currentPen || 'Unassigned',
+        status: 'Active',
+        castrationStatus: animal.castrationStatus || 'Not Castrated',
+        purpose: 'Breeding',
+        breedingStatus: 'Growing',
+        notes: 'Auto-created and synced from dynamic fetch due to Breeding purpose.',
+        createdBy: req.user?._id
+      });
+      animal.boarRef = boar._id;
+      await animal.save();
+    } else {
+      return next(new CustomError('Boar record not found.', 404));
+    }
   }
 
   res.status(200).json(ApiResponse.success(boar, 'Boar details retrieved successfully.'));
@@ -334,4 +357,94 @@ export const getBoarServiceHistory = asyncHandler(async (req, res, next) => {
 
   // This returns all references or resolves from mock db in a production setup
   res.status(200).json(ApiResponse.success(boar.serviceHistoryRefs, 'Boar service history references retrieved.'));
+});
+
+// @desc    Move Boar to Fattening
+// @route   POST /api/boars/:id/move-to-fattening
+// @access  Private
+export const moveToFattening = asyncHandler(async (req, res, next) => {
+  const { castrationStatus, reason } = req.body;
+  const boar = await Boar.findById(req.params.id);
+
+  if (!boar || boar.isDeleted) {
+    return next(new CustomError('Boar record not found.', 404));
+  }
+
+  boar.purpose = 'Fattening';
+  if (castrationStatus) {
+    boar.castrationStatus = castrationStatus;
+  }
+  
+  const moveMsg = `Moved to Fattening.${castrationStatus ? ' Castration Status: ' + castrationStatus + '.' : ''}${reason ? ' Reason: ' + reason : ''}`;
+  boar.notes = boar.notes ? `${boar.notes}\n${moveMsg}` : moveMsg;
+  boar.breedingStatus = 'Retired';
+  
+  await boar.save();
+
+  // Sync with Master Animal Record
+  const masterAnimal = await Animal.findOne({ animalNo: boar.animalNo });
+  if (masterAnimal) {
+    masterAnimal.purpose = 'Fattening';
+    if (castrationStatus) {
+      masterAnimal.castrationStatus = castrationStatus;
+    }
+    await masterAnimal.save();
+  }
+
+  res.status(200).json(ApiResponse.success(boar, 'Boar successfully moved to Fattening.'));
+});
+
+// @desc    Activate external animal as Boar
+// @route   POST /api/boars/activate-animal
+// @access  Private
+export const activateBoar = asyncHandler(async (req, res, next) => {
+  const { animalNo, purpose, castrationStatus, notes } = req.body;
+
+  const masterAnimal = await Animal.findOne({ animalNo });
+  if (!masterAnimal || masterAnimal.isDeleted) {
+    return next(new CustomError('Master Animal record not found.', 404));
+  }
+
+  if (masterAnimal.sex !== 'Male') {
+    return next(new CustomError('Only male animals can be activated as a Boar.', 400));
+  }
+
+  const exists = await Boar.findOne({ animalNo });
+  if (exists) {
+    return next(new CustomError(`Boar record already exists for animalNo ${animalNo}`, 400));
+  }
+
+  const finalCastrationStatus = castrationStatus || masterAnimal.castrationStatus || 'Not Castrated';
+  const finalPurpose = finalCastrationStatus === 'Castrated' ? 'Fattening' : (purpose || 'Breeding');
+  const finalBreedingStatus = finalPurpose === 'Fattening' ? 'Retired' : 'Growing';
+
+  // Create Boar Record using Master Animal details
+  const boar = new Boar({
+    animalNo: masterAnimal.animalNo,
+    dob: masterAnimal.dob,
+    breed: masterAnimal.breed,
+    sireNo: masterAnimal.sireNo || 'UNKNOWN',
+    damNo: masterAnimal.damNo || 'UNKNOWN',
+    birthWeight: masterAnimal.currentWeight || 1.5,
+    latestWeight: masterAnimal.currentWeight || 1.5,
+    penNo: masterAnimal.currentPen || 'Unassigned',
+    status: 'Active',
+    purpose: finalPurpose,
+    castrationStatus: finalCastrationStatus,
+    breedingStatus: finalBreedingStatus,
+    notes: notes || 'Activated operationally in Boar module.',
+    createdBy: req.user?._id
+  });
+
+  await boar.save();
+
+  masterAnimal.animalType = 'Boar';
+  masterAnimal.lifecycleStage = 'Boar';
+  masterAnimal.moduleAssignment = 'Boar';
+  masterAnimal.boarRef = boar._id;
+  masterAnimal.purpose = finalPurpose;
+  masterAnimal.castrationStatus = finalCastrationStatus;
+  await masterAnimal.save();
+
+  res.status(201).json(ApiResponse.success(boar, 'Animal successfully activated in Boar module.'));
 });

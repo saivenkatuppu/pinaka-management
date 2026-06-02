@@ -62,7 +62,7 @@ export default function MainLayout({ children }) {
     { id: 1, message: "Sow #S-104 expected farrowing in 3 days", type: "warning", read: false },
     { id: 2, message: "Low Stock Alert: Pre-Starter Feed under 150 kg", type: "danger", read: false },
     { id: 3, message: "Medicine 'Penicillin' is expiring on 2026-06-01", type: "danger", read: true },
-    { id: 4, message: "Treatment due today for Grower #G-402", type: "info", read: false }
+    { id: 4, message: "Treatment due today for Piglet #P-402", type: "info", read: false }
   ]);
 
   const handleSignOut = () => {
@@ -85,9 +85,10 @@ export default function MainLayout({ children }) {
       groupName: 'Animal Management',
       items: [
         { name: 'Animal Stock Register', path: '/stock', icon: Database },
-        { name: 'Grower Record Card', path: '/growers', icon: ClipboardList },
+        { name: 'Piglet Record Card', path: '/piglets', icon: ClipboardList },
         { name: 'Sow Record Card', path: '/sows', icon: HeartPulse },
-        { name: 'Boar Record Card', path: '/boars', icon: Zap }
+        { name: 'Boar Record Card', path: '/boars', icon: Zap },
+        { name: 'Farm Structure', path: '/structure', icon: Layers }
       ]
     },
     {
@@ -344,8 +345,6 @@ export default function MainLayout({ children }) {
               <Menu className="w-4 h-4" />
             </button>
             <div className="hidden sm:flex items-center gap-1.5 text-xs text-textSecondary font-semibold tracking-wider uppercase select-none">
-              <span>Farm Register</span>
-              <span className="text-textSecondary/40">/</span>
               <span className="text-primary font-extrabold">{getBreadcrumbs()}</span>
             </div>
           </div>

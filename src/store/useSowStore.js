@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import { useGrowerStore } from './useGrowerStore';
+import { usePigletStore } from './usePigletStore';
 import { useSettingsStore } from './useSettingsStore';
+import client from '../api/client';
 
 const MOCK_SEED_SOWS = [
   {
@@ -132,6 +133,85 @@ export const useSowStore = create((set, get) => ({
     try {
       let list = loadLocalSows();
 
+      // Sync identity fields from Animal Store dynamically
+      try {
+        const { useAnimalStore } = await import('./useAnimalStore');
+        let animals = useAnimalStore.getState().animals;
+        if (!animals || animals.length === 0) {
+          await useAnimalStore.getState().fetchAnimals();
+          animals = useAnimalStore.getState().animals;
+        }
+        if (animals && animals.length > 0) {
+          // ─── AUTO-SYNC missing Sows from Animal Registry ───
+          let updatedLocalStorage = false;
+          animals.forEach(animal => {
+            if (animal.animalType === 'Sow' && animal.purpose === 'Breeding' && animal.operationalStatus === 'Active' && !animal.isDeleted) {
+              const alreadyExists = list.some(s => s.animalNo === animal.animalNo);
+              if (!alreadyExists) {
+                const sowEntry = {
+                  _id: `sow_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                  animalNo: animal.animalNo,
+                  dob: animal.dob || 'Unknown',
+                  breed: animal.breed || 'Unknown',
+                  sireNo: animal.sireNo || 'UNKNOWN',
+                  damNo: animal.damNo || 'UNKNOWN',
+                  birthWeight: Number(animal.currentWeight || 1.5),
+                  latestWeight: Number(animal.currentWeight || 1.5),
+                  penNo: animal.currentPen || 'Unassigned',
+                  status: 'Active',
+                  pregnancyStatus: 'Not Pregnant',
+                  parityCount: 0,
+                  purpose: 'Breeding',
+                  lastHeatDate: '',
+                  lastServiceDate: '',
+                  expectedFarrowingDate: '',
+                  notes: `Auto-synced from Animal Registry due to Breeding purpose.`,
+                  isDeleted: false,
+                  createdAt: new Date().toISOString(),
+                  heatHistory: [],
+                  breedingHistory: [],
+                  farrowingHistory: [],
+                  treatmentHistory: [],
+                  statusHistory: [{
+                    _id: `sh_${Date.now()}`,
+                    previousStatus: 'None',
+                    newStatus: 'Active',
+                    updatedBy: 'System',
+                    notes: 'Auto-activated due to Breeding purpose.',
+                    updatedAt: new Date().toISOString()
+                  }]
+                };
+                list.push(sowEntry);
+                updatedLocalStorage = true;
+              }
+            }
+          });
+          if (updatedLocalStorage) {
+            saveLocalSows(list);
+          }
+
+          list = list.map(s => {
+            const animal = animals.find(a => a.animalNo === s.animalNo);
+            if (animal) {
+              return {
+                ...s,
+                earTag: animal.earTag,
+                dob: animal.dob,
+                breed: animal.breed,
+                sireNo: animal.sireNo,
+                damNo: animal.damNo,
+                sex: animal.sex,
+                source: animal.source,
+                purpose: animal.purpose
+              };
+            }
+            return s;
+          });
+        }
+      } catch (err) {
+        console.warn("Could not sync sow identity fields with Animal Store:", err);
+      }
+
       // Apply filters
       if (filters.status) {
         list = list.filter(s => s.status === filters.status);
@@ -159,8 +239,90 @@ export const useSowStore = create((set, get) => ({
     set({ loading: true, error: null });
     try {
       const list = loadLocalSows();
-      const match = list.find(s => s._id === id);
+      let match = list.find(s => s._id === id || s.animalNo === id);
+      
+      if (!match) {
+        try {
+          const { useAnimalStore } = await import('./useAnimalStore');
+          let animals = useAnimalStore.getState().animals;
+          if (!animals || animals.length === 0) {
+            await useAnimalStore.getState().fetchAnimals();
+            animals = useAnimalStore.getState().animals;
+          }
+          const animal = animals.find(a => (a._id === id || a.animalNo === id) && !a.isDeleted);
+          if (animal && animal.animalType === 'Sow' && animal.purpose === 'Breeding') {
+            const newSow = {
+              _id: `sow_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              animalNo: animal.animalNo,
+              dob: animal.dob || 'Unknown',
+              breed: animal.breed || 'Unknown',
+              sireNo: animal.sireNo || 'UNKNOWN',
+              damNo: animal.damNo || 'UNKNOWN',
+              birthWeight: Number(animal.currentWeight || 1.5),
+              latestWeight: Number(animal.currentWeight || 1.5),
+              penNo: animal.currentPen || 'Unassigned',
+              status: 'Active',
+              pregnancyStatus: 'Not Pregnant',
+              parityCount: 0,
+              purpose: 'Breeding',
+              lastHeatDate: '',
+              lastServiceDate: '',
+              expectedFarrowingDate: '',
+              notes: 'Auto-created and synced from dynamic fetch due to Breeding purpose.',
+              isDeleted: false,
+              createdAt: new Date().toISOString(),
+              heatHistory: [],
+              breedingHistory: [],
+              farrowingHistory: [],
+              treatmentHistory: [],
+              statusHistory: [{
+                _id: `sh_${Date.now()}`,
+                previousStatus: 'None',
+                newStatus: 'Active',
+                updatedBy: 'System',
+                notes: 'Auto-activated due to Breeding purpose.',
+                updatedAt: new Date().toISOString()
+              }]
+            };
+            const currentList = loadLocalSows();
+            currentList.push(newSow);
+            saveLocalSows(currentList);
+            
+            await useAnimalStore.getState().updateAnimal(animal._id, { sowRef: newSow._id });
+            match = newSow;
+          }
+        } catch (healErr) {
+          console.error("Sow self-healing failed:", healErr);
+        }
+      }
+
       if (!match) throw new Error("Sow breeding card record not found.");
+
+      // Sync identity fields from Animal Store dynamically
+      try {
+        const { useAnimalStore } = await import('./useAnimalStore');
+        let animals = useAnimalStore.getState().animals;
+        if (!animals || animals.length === 0) {
+          await useAnimalStore.getState().fetchAnimals();
+          animals = useAnimalStore.getState().animals;
+        }
+        const animal = animals.find(a => a.animalNo === match.animalNo);
+        if (animal) {
+          match = {
+            ...match,
+            earTag: animal.earTag,
+            dob: animal.dob,
+            breed: animal.breed,
+            sireNo: animal.sireNo,
+            damNo: animal.damNo,
+            sex: animal.sex,
+            source: animal.source,
+            purpose: animal.purpose
+          };
+        }
+      } catch (err) {
+        console.warn("Could not sync sow identity fields with Animal Store:", err);
+      }
 
       set({ selectedSow: match, loading: false });
       return match;
@@ -226,37 +388,39 @@ export const useSowStore = create((set, get) => ({
     }
   },
 
-  importSowFromGrower: async (growerId, notes, enteredBy) => {
+  importSowFromPiglet: async (pigletId, notes, enteredBy) => {
     set({ loading: true, error: null });
     try {
       const list = loadLocalSows();
       
-      // Load growers from storage to promote grower
-      const growersList = JSON.parse(localStorage.getItem('pinaka_growers') || '[]');
-      const grower = growersList.find(g => g._id === growerId);
+      // Load piglets from storage to promote
+      const pigletsList = JSON.parse(localStorage.getItem('pinaka_piglets') || '[]');
+      const piglet = pigletsList.find(p => p._id === pigletId);
       
-      if (!grower) throw new Error("Grower record not found.");
-      if (grower.sex !== 'Female') throw new Error("Only female growers can be promoted to Sows.");
+      if (!piglet) throw new Error("Piglet record not found.");
+      if (piglet.sex !== 'Female') throw new Error("Only female piglets can be promoted to Sows.");
 
-      const code = grower.animalNo.toUpperCase().trim();
+      const code = piglet.animalNo.toUpperCase().trim();
       const exists = list.some(s => s.animalNo === code);
-      if (exists) throw new Error(`Grower '${code}' is already registered as a Sow breeder.`);
+      if (exists) throw new Error(`Piglet '${code}' is already registered as a Sow breeder.`);
 
       // Create sow
       const newSow = {
         _id: `sow_${Date.now()}`,
         animalNo: code,
-        dob: grower.dob,
-        breed: grower.breed,
-        sireNo: grower.sireNo || 'UNKNOWN',
-        damNo: grower.damNo || 'UNKNOWN',
-        birthWeight: grower.birthWeight,
-        latestWeight: grower.latestWeight || grower.birthWeight,
-        penNo: grower.penNo,
+        dob: piglet.dob,
+        breed: piglet.breed,
+        sireNo: piglet.sireNo || 'UNKNOWN',
+        damNo: piglet.damNo || 'UNKNOWN',
+        birthWeight: piglet.birthWeight,
+        latestWeight: piglet.latestWeight || piglet.birthWeight,
+        penNo: piglet.penNo,
         status: 'Active',
         pregnancyStatus: 'Not Pregnant',
         parityCount: 0,
-        notes: notes || grower.notes || 'Promoted and imported from Grower Records.',
+        purpose: 'Breeding',
+        pigletRef: piglet._id,
+        notes: notes || piglet.notes || 'Promoted and imported from Piglet Module.',
         isDeleted: false,
         createdAt: new Date().toISOString(),
         heatHistory: [],
@@ -269,33 +433,36 @@ export const useSowStore = create((set, get) => ({
             previousStatus: 'None',
             newStatus: 'Active',
             updatedBy: enteredBy || 'System',
-            notes: 'Imported from grower records',
+            notes: 'Imported from piglet records',
             updatedAt: new Date().toISOString()
           }
         ]
       };
 
-      // Update grower in storage
-      const updatedGrowers = growersList.map(g => {
-        if (g._id === growerId) {
+      // Update piglet in storage
+      const updatedPiglets = pigletsList.map(p => {
+        if (p._id === pigletId) {
           return {
-            ...g,
-            status: 'Promoted to Sow',
+            ...p,
+            status: 'Weaned',
+            promotedTo: 'Sow',
+            promotedAt: new Date().toISOString(),
+            sowId: newSow._id,
             statusHistory: [
-              ...(g.statusHistory || []),
+              ...(p.statusHistory || []),
               {
-                _id: `sh_g_${Date.now()}`,
-                previousStatus: g.status,
-                newStatus: 'Promoted to Sow',
+                _id: `sh_p_${Date.now()}`,
+                previousStatus: p.status,
+                newStatus: 'Weaned',
                 updatedBy: enteredBy || 'System',
                 notes: 'Promoted to Sow breeding registry',
                 updatedAt: new Date().toISOString()
               }
             ],
             promotionHistory: [
-              ...(g.promotionHistory || []),
+              ...(p.promotionHistory || []),
               {
-                _id: `pr_g_${Date.now()}`,
+                _id: `pr_p_${Date.now()}`,
                 type: 'Sow',
                 promotedAt: new Date().toISOString(),
                 promotedBy: enteredBy || 'System',
@@ -304,16 +471,15 @@ export const useSowStore = create((set, get) => ({
             ]
           };
         }
-        return g;
+        return p;
       });
 
-      localStorage.setItem('pinaka_growers', JSON.stringify(updatedGrowers));
+      localStorage.setItem('pinaka_piglets', JSON.stringify(updatedPiglets));
       
-      // Update useGrowerStore growers list if store instantiated
-      const growerStore = useGrowerStore.getState();
-      if (growerStore && typeof growerStore.fetchGrowers === 'function') {
-        growerStore.fetchGrowers();
-      }
+      // Update usePigletStore list
+      try {
+        usePigletStore.getState().fetchPiglets();
+      } catch (e) {}
 
       const updatedSows = [newSow, ...list];
       saveLocalSows(updatedSows);
@@ -332,7 +498,7 @@ export const useSowStore = create((set, get) => ({
     try {
       const list = loadLocalSows();
       
-      const newNextHeat = useSettingsStore.getState().calculateDate(heatData.date, 'heatCycle').split('T')[0];
+      const newNextHeat = useSettingsStore.getState().calculateDate(heatData.date, 'heatCycleDuration').split('T')[0];
 
       const updatedList = list.map(s => {
         if (s._id === id) {
@@ -393,7 +559,7 @@ export const useSowStore = create((set, get) => ({
     try {
       const list = loadLocalSows();
       const serviceDateStr = breedingData.serviceDate || new Date().toISOString().split('T')[0];
-      const estFarrowing = useSettingsStore.getState().calculateDate(serviceDateStr, 'gestation').split('T')[0];
+      const estFarrowing = useSettingsStore.getState().calculateDate(serviceDateStr, 'gestationDuration').split('T')[0];
 
       const updatedList = list.map(s => {
         if (s._id === id) {
@@ -665,7 +831,7 @@ export const useSowStore = create((set, get) => ({
                 _id: `h_${Date.now()}`,
                 heatNumber: (updated.heatHistory?.length || 0) + 1,
                 heatDate: updated.lastHeatDate,
-                expectedNextHeat: useSettingsStore.getState().calculateDate(new Date().toISOString(), 'heatCycle').split('T')[0],
+                expectedNextHeat: useSettingsStore.getState().calculateDate(new Date().toISOString(), 'heatCycleDuration').split('T')[0],
                 durationHours: 24,
                 status: 'In Heat',
                 notes: notes || 'Direct status transition to In Heat.',
@@ -675,13 +841,13 @@ export const useSowStore = create((set, get) => ({
           } else if (status === 'Pregnancy Pending') {
             updated.pregnancyStatus = 'Pending Confirmation';
             updated.lastServiceDate = new Date().toISOString().split('T')[0];
-            updated.expectedFarrowingDate = useSettingsStore.getState().calculateDate(new Date().toISOString(), 'gestation').split('T')[0];
+            updated.expectedFarrowingDate = useSettingsStore.getState().calculateDate(new Date().toISOString(), 'gestationDuration').split('T')[0];
           } else if (status === 'Pregnant') {
             updated.pregnancyStatus = 'Pregnant';
             if (!updated.lastServiceDate) {
               updated.lastServiceDate = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0]; // seed 30 days ago to show progress
             }
-            updated.expectedFarrowingDate = useSettingsStore.getState().calculateDate(updated.lastServiceDate, 'gestation').split('T')[0];
+            updated.expectedFarrowingDate = useSettingsStore.getState().calculateDate(updated.lastServiceDate, 'gestationDuration').split('T')[0];
           } else if (status === 'Lactating') {
             updated.pregnancyStatus = 'Not Pregnant';
             updated.expectedFarrowingDate = '';
@@ -807,7 +973,7 @@ export const useSowStore = create((set, get) => ({
     list.forEach(s => {
       // 1. Upcoming and Overdue checks
       if (s.lastHeatDate && s.status !== 'In Heat' && s.pregnancyStatus !== 'Pregnant') {
-        const nextExpectedHeat = new Date(useSettingsStore.getState().calculateDate(s.lastHeatDate, 'heatCycle'));
+        const nextExpectedHeat = new Date(useSettingsStore.getState().calculateDate(s.lastHeatDate, 'heatCycleDuration'));
         const diffTime = nextExpectedHeat - now;
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
@@ -874,5 +1040,129 @@ export const useSowStore = create((set, get) => ({
     });
 
     set({ heatAlerts: alerts });
+  },
+
+  moveToFattening: async (id, reason = '') => {
+    set({ loading: true, error: null });
+    try {
+      let updatedSow = null;
+      try {
+        const response = await client.post(`/sows/${id}/move-to-fattening`, { reason }, { skipAuthRedirect: true });
+        if (response && response.data) {
+          updatedSow = response.data.data;
+        }
+      } catch (apiErr) {
+        console.warn("MERN moveToFattening Sow API failed, falling back to local storage.", apiErr);
+      }
+
+      const list = loadLocalSows();
+      const updatedList = list.map(s => {
+        if (s._id === id) {
+          const updated = { 
+            ...s, 
+            purpose: 'Fattening',
+            notes: s.notes ? `${s.notes}\nMoved to Fattening. Reason: ${reason}` : `Moved to Fattening. Reason: ${reason}`
+          };
+          updatedSow = updated;
+          return updated;
+        }
+        return s;
+      });
+
+      saveLocalSows(updatedList);
+
+      // Sync with Animal Store locally
+      const targetSow = updatedList.find(s => s._id === id);
+      if (targetSow) {
+        const { useAnimalStore } = await import('./useAnimalStore');
+        const animalStore = useAnimalStore.getState();
+        const animalMatch = animalStore.animals.find(a => a.animalNo === targetSow.animalNo);
+        if (animalMatch) {
+          await animalStore.updateAnimal(animalMatch._id, { purpose: 'Fattening' });
+        }
+      }
+
+      set({ sows: updatedList, selectedSow: updatedSow, loading: false });
+      return updatedSow;
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
+  },
+
+  activateSow: async (animalNo, purpose = 'Breeding', notes = '') => {
+    set({ loading: true, error: null });
+    try {
+      let activated = null;
+      try {
+        const res = await client.post('/sows/activate-animal', { animalNo, purpose, notes }, { skipAuthRedirect: true });
+        if (res && res.data) {
+          activated = res.data.data;
+        }
+      } catch (apiErr) {
+        console.warn("MERN activate-sow API failed, falling back to local storage.", apiErr);
+      }
+
+      const sows = loadLocalSows();
+      if (sows.some(s => s.animalNo === animalNo)) {
+        throw new Error("Sow operational record already exists for this animal number.");
+      }
+
+      if (!activated) {
+        // Fallback local logic
+        const { useAnimalStore } = await import('./useAnimalStore');
+        const animalStore = useAnimalStore.getState();
+        const targetAnimal = animalStore.animals.find(a => a.animalNo === animalNo);
+        if (!targetAnimal) throw new Error("Animal not found in registry.");
+
+        activated = {
+          _id: `sow_${Date.now()}`,
+          animalNo: targetAnimal.animalNo,
+          dob: targetAnimal.dob,
+          breed: targetAnimal.breed,
+          sireNo: targetAnimal.sireNo || 'UNKNOWN',
+          damNo: targetAnimal.damNo || 'UNKNOWN',
+          birthWeight: targetAnimal.currentWeight || 1.5,
+          latestWeight: targetAnimal.currentWeight || 1.5,
+          penNo: targetAnimal.currentPen || 'Unassigned',
+          status: 'Active',
+          pregnancyStatus: 'Not Pregnant',
+          purpose: purpose,
+          createdAt: new Date().toISOString(),
+          isDeleted: false,
+          heatHistory: [],
+          breedingHistory: [],
+          farrowingHistory: [],
+          treatmentHistory: [],
+          statusHistory: [
+            {
+              _id: `sh_${Date.now()}`,
+              previousStatus: 'None',
+              newStatus: 'Active',
+              updatedBy: 'System',
+              notes: notes || 'Activated operationally in Sow module.',
+              updatedAt: new Date().toISOString()
+            }
+          ]
+        };
+
+        // Update target animal's operational reference
+        await animalStore.updateAnimal(targetAnimal._id, {
+          animalType: 'Sow',
+          lifecycleStage: 'Sow',
+          moduleAssignment: 'Sow',
+          sowRef: activated._id,
+          purpose: purpose
+        });
+      }
+
+      const updatedSows = [activated, ...sows];
+      saveLocalSows(updatedSows);
+      set({ sows: updatedSows, loading: false });
+      return activated;
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
   }
 }));

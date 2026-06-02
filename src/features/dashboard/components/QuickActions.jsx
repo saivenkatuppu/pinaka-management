@@ -6,12 +6,12 @@ export default function QuickActions() {
   const navigate = useNavigate();
 
   const actions = [
-    { label: 'Register Grower', icon: Plus, color: 'textPrimary', bg: 'hover:bg-sidebar', route: '/growers' },
-    { label: 'Register Sow', icon: Plus, color: 'primary', bg: 'hover:bg-primary/10', route: '/sows' },
-    { label: 'Register Boar', icon: Plus, color: 'info', bg: 'hover:bg-info/10', route: '/boars' },
+    { label: 'Register Animal', icon: Plus, color: 'textPrimary', bg: 'hover:bg-sidebar', route: '/stock' },
+    { label: 'Piglet Records', icon: Plus, color: 'warning', bg: 'hover:bg-warning/10', route: '/piglets' },
+    { label: 'Sow Records', icon: Plus, color: 'primary', bg: 'hover:bg-primary/10', route: '/sows' },
+    { label: 'Boar Records', icon: Plus, color: 'info', bg: 'hover:bg-info/10', route: '/boars' },
     { label: 'Record Breeding', icon: Heart, color: 'danger', bg: 'hover:bg-danger/10', route: '/breeding' },
     { label: 'Register Farrowing', icon: Activity, color: 'success', bg: 'hover:bg-success/10', route: '/farrowing' },
-    { label: 'Give Medicine', icon: Syringe, color: 'warning', bg: 'hover:bg-warning/10', route: '/medicine' },
     { label: 'Record Treatment', icon: Syringe, color: 'danger', bg: 'hover:bg-danger/10', route: '/treatment' },
     { label: 'Record Mortality', icon: Skull, color: 'textSecondary', bg: 'hover:bg-sidebar', route: '/mortality' },
     { label: 'Record Sale', icon: DollarSign, color: 'success', bg: 'hover:bg-success/10', route: '/sales' },

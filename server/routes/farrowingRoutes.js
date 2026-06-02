@@ -4,7 +4,6 @@ import {
   getFarrowingById,
   createFarrowing,
   confirmWeaning,
-  transferToGrower,
   updatePiglet,
   addHealthLog
 } from '../controllers/farrowingController.js';
@@ -20,9 +19,6 @@ router.route('/:id')
 
 router.route('/:id/wean')
   .put(confirmWeaning);
-
-router.route('/:id/transfer-grower')
-  .put(transferToGrower);
 
 router.route('/:id/piglet/:pigletId')
   .put(updatePiglet);

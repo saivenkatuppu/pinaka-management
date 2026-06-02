@@ -13,15 +13,14 @@ const defaultSettings = {
     timezone: 'Asia/Kolkata'
   },
   lifecycle: {
-    heatCycle: 21,
-    heatWindow: 2, // days
-    pregnancyConfirmation: 21,
-    gestation: 114,
-    lactation: 60,
-    weaning: 60,
-    growerPromotionAge: 60,
+    heatCycleDuration: 21,
+    heatWindowDuration: 2, // days
+    pregnancyConfirmationPeriod: 21,
+    gestationDuration: 114,
+    lactationDuration: 60,
+    weaningAge: 60,
     boarPubertyAge: 180,
-    sowBreedingReadyAge: 210,
+    sowBreedingReadinessAge: 210,
   },
   testMode: {
     enabled: false,
@@ -39,10 +38,9 @@ const defaultSettings = {
     autoTreatmentFollowup: true
   },
   idRules: {
-    growerPrefix: 'G-',
     sowPrefix: 'S-',
     boarPrefix: 'B-',
-    pigletPrefix: 'PIG-',
+    pigletPrefix: 'P-',
     farrowingPrefix: 'FW-',
     mortalityPrefix: 'MORT-'
   },
@@ -64,7 +62,7 @@ const defaultSettings = {
     showBreeding: true,
     showLifecycle: true,
     showTreatment: true,
-    showGrower: true,
+    showPiglet: true,
     compactMode: false
   }
 };
@@ -78,6 +76,21 @@ export const useSettingsStore = create(
         set((state) => ({
           [category]: { ...state[category], ...values }
         }));
+      },
+
+      // Age calculation helpers
+      calculateAgeInDays: (dob) => {
+        if (!dob || dob === 'N/A' || dob === 'Unknown') return 0;
+        const diffTime = new Date() - new Date(dob);
+        if (isNaN(diffTime)) return 0;
+        return Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24)));
+      },
+
+      calculateAgeInMonths: (dob) => {
+        if (!dob || dob === 'N/A' || dob === 'Unknown') return 0;
+        const diffTime = new Date() - new Date(dob);
+        if (isNaN(diffTime)) return 0;
+        return Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.4375)));
       },
 
       // Core Lifecycle Engine Helper

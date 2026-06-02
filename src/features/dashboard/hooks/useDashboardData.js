@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAnimalStore } from '../../../store/useAnimalStore';
-import { useGrowerStore } from '../../../store/useGrowerStore';
+import { usePigletStore } from '../../../store/usePigletStore';
 import { useSowStore } from '../../../store/useSowStore';
 import { useBoarStore } from '../../../store/useBoarStore';
 import { useBreedingStore } from '../../../store/useBreedingStore';
@@ -13,7 +13,7 @@ import { useSettingsStore } from '../../../store/useSettingsStore';
 
 export function useDashboardData() {
   const { animals, fetchAnimals } = useAnimalStore();
-  const { growers, fetchGrowers } = useGrowerStore();
+  const { piglets, fetchPiglets } = usePigletStore();
   const { sows, fetchSows } = useSowStore();
   const { boars, fetchBoars } = useBoarStore();
   const { breedings, fetchBreedings } = useBreedingStore();
@@ -30,7 +30,7 @@ export function useDashboardData() {
     setLoading(true);
     await Promise.all([
       fetchAnimals(),
-      fetchGrowers(),
+      fetchPiglets(),
       fetchSows(),
       fetchBoars(),
       fetchBreedings(),
@@ -42,7 +42,7 @@ export function useDashboardData() {
     ]);
     setLoading(false);
   }, [
-    fetchAnimals, fetchGrowers, fetchSows, fetchBoars, 
+    fetchAnimals, fetchPiglets, fetchSows, fetchBoars, 
     fetchBreedings, fetchFarrowings, fetchTreatments, 
     fetchMedicines, fetchMortalities, fetchSales
   ]);
@@ -75,7 +75,7 @@ export function useDashboardData() {
       if (f.lactationStatus === 'Weaned') return false;
       if (f.actualFarrowingDate) {
         const fDate = new Date(f.actualFarrowingDate);
-        const wDate = new Date(calculateDate(fDate.toISOString(), 'weaning'));
+        const wDate = new Date(calculateDate(fDate.toISOString(), 'weaningAge'));
         const diffDays = (wDate - today) / (1000 * 60 * 60 * 24);
         return diffDays >= 0 && diffDays <= 7;
       }
@@ -98,7 +98,7 @@ export function useDashboardData() {
     return {
       totalActive: activeAnimals.length,
       breakdown: {
-        growers: activeAnimals.filter(a => a.lifecycleStage === 'Grower').length,
+        growers: activeAnimals.filter(a => a.lifecycleStage === 'Piglet').length,
         sows: activeAnimals.filter(a => a.lifecycleStage === 'Sow').length,
         boars: activeAnimals.filter(a => a.lifecycleStage === 'Boar').length,
         piglets: nursingPiglets
@@ -149,7 +149,7 @@ export function useDashboardData() {
     // Weaning & Promotion
     farrowings.forEach(f => {
       if (f.lactationStatus !== 'Weaned' && f.actualFarrowingDate) {
-        const wDate = new Date(calculateDate(new Date(f.actualFarrowingDate).toISOString(), 'weaning'));
+        const wDate = new Date(calculateDate(new Date(f.actualFarrowingDate).toISOString(), 'weaningAge'));
         const diff = (wDate - today) / (1000 * 60 * 60 * 24);
         if (diff <= 7 && diff >= -14) {
           list.push({ type: 'success', title: 'Weaning Due', message: `Litter from Sow ${f.sowNo} is ready for weaning.`, date: wDate.toISOString() });
@@ -209,7 +209,7 @@ export function useDashboardData() {
     
     // Raw stores for charts
     breedings,
-    growers,
+    growers: piglets,
     mortalities,
     treatments
   };

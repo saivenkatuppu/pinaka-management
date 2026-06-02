@@ -4,6 +4,7 @@ import MainLayout from '../../../components/layout/MainLayout';
 import { useFarrowingStore } from '../../../store/useFarrowingStore';
 import { useMortalityStore } from '../../../store/useMortalityStore';
 import { useAuthStore } from '../../../store/useAuthStore';
+import { useSettingsStore } from '../../../store/useSettingsStore';
 import Modal from '../../../components/ui/Modal';
 import { FormField, FormGrid } from '../../../components/ui/FormLayout';
 import StatusBadge from '../../../components/ui/StatusBadge';
@@ -22,13 +23,13 @@ import {
 } from 'lucide-react';
 
 // ── Weaning Status Calculation ────────────────────────────────────────────────
-const getWeaningStatus = (piglet, farrowingDate) => {
+const getWeaningStatus = (piglet, farrowingDate, weaningAge = 60) => {
   if (piglet.status === 'Dead') return { label: 'DECEASED', color: 'text-danger', bg: 'bg-danger/10' };
   if (piglet.promotedToGrower || piglet.status === 'Promoted') return { label: 'PROMOTED', color: 'text-blueAccent', bg: 'bg-blueAccent/10' };
   const dob = piglet.dob || farrowingDate;
   const ageMs = Date.now() - new Date(dob).getTime();
   const ageDays = Math.floor(ageMs / (1000 * 60 * 60 * 24));
-  if (ageDays >= 60) return { label: 'READY FOR GROWER', color: 'text-warning', bg: 'bg-warning/10' };
+  if (ageDays >= weaningAge) return { label: 'READY FOR WEANING', color: 'text-warning', bg: 'bg-warning/10' };
   return { label: `NURSING (Day ${ageDays})`, color: 'text-success', bg: 'bg-success/10' };
 };
 
@@ -36,6 +37,7 @@ export default function ParityDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const weaningAge = useSettingsStore(state => state.lifecycle.weaningAge) || 60;
 
   const {
     selectedFarrowing: litter,
@@ -44,9 +46,7 @@ export default function ParityDetailPage() {
     updatePigletWeight,
     addLitterHealthLog,
     addPigletVaccineLog,
-    markPigletDead,
-    promotePiglet,
-    getSuggestedReusableIds
+    markPigletDead
   } = useFarrowingStore();
 
   const { recordMortality } = useMortalityStore();
@@ -68,22 +68,9 @@ export default function ParityDetailPage() {
   const [deadData, setDeadData] = useState({ causeOfDeath: '', notes: '' });
   const [deadLoading, setDeadLoading] = useState(false);
 
-  // Promote to Grower modal
-  const [isPromoteOpen, setIsPromoteOpen] = useState(false);
-  const [promoteData, setPromoteData] = useState({ growerId: '', promotionDate: new Date().toISOString().split('T')[0], notes: '' });
-  const [promoteLoading, setPromoteLoading] = useState(false);
-  const [suggestedIds, setSuggestedIds] = useState([]);
-
   useEffect(() => {
     fetchFarrowingById(id);
   }, [id, fetchFarrowingById]);
-
-  // Load reusable IDs when promote modal opens
-  useEffect(() => {
-    if (isPromoteOpen && getSuggestedReusableIds) {
-      setSuggestedIds(getSuggestedReusableIds());
-    }
-  }, [isPromoteOpen, getSuggestedReusableIds]);
 
   // ── Derived stats ──────────────────────────────────────────────────────────
   const stats = useMemo(() => {
@@ -96,10 +83,10 @@ export default function ParityDetailPage() {
       if (p.status !== 'Nursing') return false;
       const dob = p.dob || litter.actualFarrowingDate;
       const ageDays = (Date.now() - new Date(dob).getTime()) / (1000 * 60 * 60 * 24);
-      return ageDays >= 60;
+      return ageDays >= weaningAge;
     }).length;
     return { nursing, dead, promoted, readyForGrower, total: piglets.length };
-  }, [litter]);
+  }, [litter, weaningAge]);
 
   // ── Handlers: Weight ───────────────────────────────────────────────────────
   const handleOpenWeight = (piglet) => {
@@ -175,61 +162,9 @@ export default function ParityDetailPage() {
     }
   };
 
-  // ── Handlers: Promote to Grower ────────────────────────────────────────────
+  // ── Handlers: Promote to Grower (Redirects to Piglet weaning flow) ──────────
   const handleOpenPromote = (piglet) => {
-    setSelectedPiglet(piglet);
-    // Option to keep existing ID by default: prefill with piglet.pigletId
-    setPromoteData({ growerId: piglet.pigletId, promotionDate: new Date().toISOString().split('T')[0], notes: '' });
-    setActionError('');
-    setIsPromoteOpen(true);
-  };
-
-  const submitPromotion = async (e) => {
-    e.preventDefault();
-    setPromoteLoading(true);
-    setActionError('');
-    
-    const growerIdClean = promoteData.growerId.trim().toUpperCase();
-    if (!growerIdClean) {
-      setActionError('Grower ID is required.');
-      setPromoteLoading(false);
-      return;
-    }
-
-    // Invalid character validation: only alphanumeric, hyphens, and underscores are allowed
-    const validIdRegex = /^[A-Z0-9\-_]+$/;
-    if (!validIdRegex.test(growerIdClean)) {
-      setActionError('Grower ID contains invalid characters. Only alphanumeric characters, hyphens (-) and underscores (_) are allowed.');
-      setPromoteLoading(false);
-      return;
-    }
-
-    // Weaning status validation
-    const dob = selectedPiglet.dob || litter.actualFarrowingDate;
-    const ageDays = Math.floor((Date.now() - new Date(dob).getTime()) / (1000 * 60 * 60 * 24));
-    const isWeaned = litter.lactationStatus === 'Weaned' || ageDays >= 60;
-    if (!isWeaned) {
-      setActionError('Cannot promote piglet before weaning. Litter must be weaned or piglet must be at least 60 days old.');
-      setPromoteLoading(false);
-      return;
-    }
-
-    try {
-      await promotePiglet(
-        id,
-        selectedPiglet.pigletId,
-        growerIdClean,
-        promoteData.promotionDate,
-        promoteData.notes,
-        user?.name || 'System'
-      );
-      setIsPromoteOpen(false);
-      await fetchFarrowingById(id);
-    } catch (err) {
-      setActionError(err.message);
-    } finally {
-      setPromoteLoading(false);
-    }
+    navigate(`/piglets?wean=${piglet.pigletId}`);
   };
 
   // ── Loading state ──────────────────────────────────────────────────────────
@@ -298,11 +233,11 @@ export default function ParityDetailPage() {
             </div>
           </div>
           <div className={`bg-cardBg border ${stats.readyForGrower > 0 ? 'border-warning/50' : 'border-borderDark'} rounded-lg p-4`}>
-            <span className="text-[10px] uppercase tracking-wider text-textSecondary font-bold">Ready for Grower</span>
+            <span className="text-[10px] uppercase tracking-wider text-textSecondary font-bold">Ready for Weaning</span>
             <p className={`text-lg font-black mt-1 ${stats.readyForGrower > 0 ? 'text-warning' : 'text-textSecondary'}`}>
               {stats.readyForGrower}
             </p>
-            <p className="text-[9px] text-textSecondary mt-1">≥ 60 Days Old</p>
+            <p className="text-[9px] text-textSecondary mt-1">≥ {weaningAge} Days Old</p>
           </div>
         </div>
 
@@ -333,10 +268,10 @@ export default function ParityDetailPage() {
                   </thead>
                   <tbody>
                     {litter.piglets?.map(piglet => {
-                      const ws = getWeaningStatus(piglet, litter.actualFarrowingDate);
+                      const ws = getWeaningStatus(piglet, litter.actualFarrowingDate, weaningAge);
                       const pigletDob = piglet.dob || litter.actualFarrowingDate;
                       const ageDays = Math.floor((Date.now() - new Date(pigletDob).getTime()) / (1000 * 60 * 60 * 24));
-                      const isWeaned = litter.lactationStatus === 'Weaned' || ageDays >= 60;
+                      const isWeaned = litter.lactationStatus === 'Weaned' || ageDays >= weaningAge;
                       const canPromote = piglet.status === 'Nursing' && !piglet.promotedToGrower && isWeaned;
                       const canDie = piglet.status === 'Nursing';
 
@@ -587,134 +522,6 @@ export default function ParityDetailPage() {
                 <textarea rows={2} placeholder="Optional postmortem notes..." value={deadData.notes} onChange={(e) => setDeadData({ ...deadData, notes: e.target.value })} className="dense-input w-full p-2" />
               </FormField>
             </FormGrid>
-          </div>
-        </Modal>
-
-        {/* ── Modal: Promote Piglet to Grower ─────────────────────────────── */}
-        <Modal
-          isOpen={isPromoteOpen}
-          onClose={() => setIsPromoteOpen(false)}
-          title={`Promote to Grower: ${selectedPiglet?.pigletId}`}
-          footer={
-            <>
-              <button onClick={() => setIsPromoteOpen(false)} disabled={promoteLoading} className="px-4 py-2 hover:bg-cardBg border border-borderDark text-textSecondary text-xs rounded uppercase font-bold">Cancel</button>
-              <button
-                onClick={submitPromotion}
-                disabled={promoteLoading || !promoteData.growerId.trim()}
-                className="px-4 py-2 bg-warning hover:bg-warning/80 text-black text-xs rounded uppercase font-bold shadow-md flex items-center gap-1 disabled:opacity-60"
-              >
-                {promoteLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ArrowUpRight className="w-3.5 h-3.5" />}
-                {promoteLoading ? 'Promoting...' : 'Promote to Grower'}
-              </button>
-            </>
-          }
-        >
-          <div className="flex flex-col gap-4 text-xs">
-            <div className="bg-warning/10 border border-warning/30 rounded-lg p-3 text-[11px] text-warning">
-              This will create a Grower record inheriting lineage from Sow <strong>{litter.sowNo}</strong> × Boar <strong>{litter.boarNo}</strong>.
-              The piglet ID <strong>{selectedPiglet?.pigletId}</strong> will be marked as Promoted.
-            </div>
-
-            {/* Piglet Info */}
-            <div className="grid grid-cols-3 gap-2 bg-sidebar rounded-lg p-3 text-[11px]">
-              <div>
-                <p className="text-textSecondary">Sex</p>
-                <p className="font-bold text-textPrimary">{selectedPiglet?.sex}</p>
-              </div>
-              <div>
-                <p className="text-textSecondary">Birth Weight</p>
-                <p className="font-bold text-textPrimary">{selectedPiglet?.birthWeight} kg</p>
-              </div>
-              <div>
-                <p className="text-textSecondary">Current Weight</p>
-                <p className="font-bold text-textPrimary">{selectedPiglet?.currentWeight} kg</p>
-              </div>
-            </div>
-
-            {actionError && (
-              <div className="bg-danger/10 border border-danger/30 rounded p-2 text-[11px] text-danger font-bold">
-                {actionError}
-              </div>
-            )}
-
-            <FormGrid cols={2}>
-              <FormField label="Current Piglet ID (Readonly)">
-                <input
-                  type="text"
-                  value={selectedPiglet?.pigletId || ''}
-                  readOnly
-                  className="dense-input font-bold font-mono tracking-widest bg-sidebar border-borderDark/40 text-textSecondary opacity-80 cursor-not-allowed"
-                />
-              </FormField>
-              <FormField label="New Grower ID" required>
-                <input
-                  type="text"
-                  placeholder="e.g. G-201 or keep current"
-                  value={promoteData.growerId}
-                  onChange={(e) => setPromoteData({ ...promoteData, growerId: e.target.value.toUpperCase() })}
-                  className="dense-input font-black font-mono tracking-widest text-primary border-primary/20"
-                  required
-                />
-              </FormField>
-            </FormGrid>
-
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setPromoteData({ ...promoteData, growerId: selectedPiglet?.pigletId || '' })}
-                className="px-2.5 py-1 text-[10px] font-bold uppercase rounded border border-borderDark bg-sidebar hover:bg-cardBg transition-colors"
-              >
-                Keep Existing ID
-              </button>
-            </div>
-
-            {/* Reusable ID suggestions */}
-            {suggestedIds.length > 0 && (
-              <div>
-                <p className="text-[10px] text-textSecondary uppercase tracking-widest font-bold mb-1.5">
-                  ♻ Suggested Reusable IDs (from Dead/Sold Animals)
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {suggestedIds.map(sid => (
-                    <button
-                      key={sid}
-                      type="button"
-                      onClick={() => setPromoteData({ ...promoteData, growerId: sid })}
-                      className="px-2 py-1 text-[10px] font-bold font-mono rounded border border-blueAccent/40 bg-blueAccent/10 text-blueAccent hover:bg-blueAccent/20 transition-colors"
-                    >
-                      {sid}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <FormGrid cols={2}>
-              <FormField label="Promotion Date" required>
-                <input
-                  type="date"
-                  value={promoteData.promotionDate}
-                  onChange={(e) => setPromoteData({ ...promoteData, promotionDate: e.target.value })}
-                  className="dense-input"
-                  required
-                />
-              </FormField>
-              <FormField label="Notes">
-                <input
-                  type="text"
-                  placeholder="Optional notes..."
-                  value={promoteData.notes}
-                  onChange={(e) => setPromoteData({ ...promoteData, notes: e.target.value })}
-                  className="dense-input"
-                />
-              </FormField>
-            </FormGrid>
-
-            <div className="bg-sidebar rounded-lg p-3 border border-borderDark/40 text-[10px] text-textSecondary leading-relaxed">
-              <CheckCircle className="w-3 h-3 inline text-success mr-1" />
-              <strong>Validation:</strong> The system will reject any ID currently active for a living animal.
-              Reusable IDs from deceased or sold animals are shown above.
-            </div>
           </div>
         </Modal>
 

@@ -10,15 +10,14 @@ export default function LifecycleTimingTab() {
   };
 
   const fields = [
-    { name: 'heatCycle', label: 'Heat Cycle Duration', desc: 'Average days between heat cycles.' },
-    { name: 'heatWindow', label: 'Heat Window', desc: 'Active standing heat duration (days).' },
-    { name: 'pregnancyConfirmation', label: 'Pregnancy Confirmation Period', desc: 'Days after breeding to confirm pregnancy.' },
-    { name: 'gestation', label: 'Gestation Period', desc: 'Days from successful breeding to farrowing.' },
-    { name: 'lactation', label: 'Lactation Duration', desc: 'Days nursing before weaning.' },
-    { name: 'weaning', label: 'Weaning Age', desc: 'Age in days when piglets are weaned.' },
-    { name: 'growerPromotionAge', label: 'Grower Promotion Age', desc: 'Age in days when piglets become growers.' },
+    { name: 'heatCycleDuration', label: 'Heat Cycle Duration', desc: 'Average days between heat cycles.' },
+    { name: 'heatWindowDuration', label: 'Heat Window', desc: 'Active standing heat duration (days).' },
+    { name: 'pregnancyConfirmationPeriod', label: 'Pregnancy Confirmation Period', desc: 'Days after breeding to confirm pregnancy.' },
+    { name: 'gestationDuration', label: 'Gestation Period', desc: 'Days from successful breeding to farrowing.' },
+    { name: 'lactationDuration', label: 'Lactation Duration', desc: 'Days nursing before weaning.' },
+    { name: 'weaningAge', label: 'Weaning Age', desc: 'Age in days when piglets are weaned.' },
     { name: 'boarPubertyAge', label: 'Boar Puberty Age', desc: 'Age in days when boars are ready to breed.' },
-    { name: 'sowBreedingReadyAge', label: 'Sow Breeding Readiness', desc: 'Age in days when gilts are ready to breed.' },
+    { name: 'sowBreedingReadinessAge', label: 'Sow Breeding Readiness', desc: 'Age in days when gilts are ready to breed.' },
   ];
 
   return (

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import MainLayout from '../../../components/layout/MainLayout';
 import { useBoarStore } from '../../../store/useBoarStore';
 import { useAuthStore } from '../../../store/useAuthStore';
+import { useSettingsStore } from '../../../store/useSettingsStore';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import Modal from '../../../components/ui/Modal';
 import { FormField, FormGrid, FormSection } from '../../../components/ui/FormLayout';
@@ -40,10 +41,26 @@ const MOCK_BREEDING_SERVICES = {
   "boar_2": []
 };
 
+// Date Formatting Helpers for Safeguarding Invalid Date parsing crashes
+const formatDate = (dateVal) => {
+  if (!dateVal || dateVal === 'Unknown' || dateVal === 'N/A' || isNaN(new Date(dateVal).getTime())) {
+    return 'Unknown / N/A';
+  }
+  return new Date(dateVal).toLocaleDateString();
+};
+
+const formatDateOptional = (dateVal) => {
+  if (!dateVal || dateVal === 'Unknown' || dateVal === 'N/A' || isNaN(new Date(dateVal).getTime())) {
+    return '—';
+  }
+  return new Date(dateVal).toLocaleDateString();
+};
+
 export default function BoarDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const boarPubertyAge = useSettingsStore(state => state.lifecycle.boarPubertyAge) || 180;
   const { 
     selectedBoar, 
     loading, 
@@ -65,6 +82,9 @@ export default function BoarDetailPage() {
   const [isStatusOpen, setIsStatusOpen] = useState(false);
   const [isTreatmentOpen, setIsTreatmentOpen] = useState(false);
   const [isHealthTestOpen, setIsHealthTestOpen] = useState(false);
+  const [isFatteningOpen, setIsFatteningOpen] = useState(false);
+  const [fatteningReason, setFatteningReason] = useState('');
+  const [castrationStatus, setCastrationStatus] = useState('Not Castrated');
 
   // Maturity states for manual updates
   const [pubertyDateInput, setPubertyDateInput] = useState(new Date().toISOString().split('T')[0]);
@@ -137,7 +157,7 @@ export default function BoarDetailPage() {
 
   // Age Calculations
   const ageInDays = useMemo(() => {
-    if (!selectedBoar) return 0;
+    if (!selectedBoar || !selectedBoar.dob || selectedBoar.dob === 'Unknown' || selectedBoar.dob === 'N/A' || isNaN(new Date(selectedBoar.dob).getTime())) return 0;
     const diffTime = Math.abs(new Date() - new Date(selectedBoar.dob));
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   }, [selectedBoar]);
@@ -193,34 +213,36 @@ export default function BoarDetailPage() {
     if (!selectedBoar) return [];
     const list = [];
 
-    // 1. Puberty Reminder (Age > 210 days / 7 months, status still growing)
-    if (ageInDays > 210 && (!selectedBoar.pubertyDate || selectedBoar.breedingStatus === 'Growing')) {
-      list.push({
-        id: 'puberty_overdue',
-        type: 'Puberty Reminder',
-        priority: 'High',
-        message: `Boar is ${ageInDays} days old (>7 months) and puberty is not yet marked. Schedule clinical maturity screening immediately.`
-      });
-    }
+    if (selectedBoar.purpose !== 'Fattening' && selectedBoar.castrationStatus !== 'Castrated') {
+      // 1. Puberty Reminder (Age > puberty age from settings, status still growing)
+      if (ageInDays > boarPubertyAge && (!selectedBoar.pubertyDate || selectedBoar.breedingStatus === 'Growing')) {
+        list.push({
+          id: 'puberty_overdue',
+          type: 'Puberty Reminder',
+          priority: 'High',
+          message: `Boar is ${ageInDays} days old (>${boarPubertyAge} days) and puberty is not yet marked. Schedule clinical maturity screening immediately.`
+        });
+      }
 
-    // 2. Breeding Readiness Alert (Puberty reached but semen collection missing)
-    if (selectedBoar.breedingStatus === 'Puberty Reached' && !selectedBoar.firstSemenCollectionDate) {
-      list.push({
-        id: 'readiness_check',
-        type: 'Readiness Assessment',
-        priority: 'Medium',
-        message: `Boar has reached puberty. Perform semen collection analysis and vet fertility clearance to mark Breeding Ready.`
-      });
-    }
+      // 2. Breeding Readiness Alert (Puberty reached but semen collection missing)
+      if (selectedBoar.breedingStatus === 'Puberty Reached' && !selectedBoar.firstSemenCollectionDate) {
+        list.push({
+          id: 'readiness_check',
+          type: 'Readiness Assessment',
+          priority: 'Medium',
+          message: `Boar has reached puberty. Perform semen collection analysis and vet fertility clearance to mark Breeding Ready.`
+        });
+      }
 
-    // 3. Low Fertility Warning (<60% success rate with at least 3 services)
-    if (analytics.totalServices >= 3 && analytics.pregnancySuccessRate < 60) {
-      list.push({
-        id: 'low_fertility',
-        type: 'Low Fertility Warning',
-        priority: 'Critical',
-        message: `Breeding success rate is currently ${analytics.pregnancySuccessRate}% (<60% across ${analytics.totalServices} services). Vet evaluation and libido checks required.`
-      });
+      // 3. Low Fertility Warning (<60% success rate with at least 3 services)
+      if (analytics.totalServices >= 3 && analytics.pregnancySuccessRate < 60) {
+        list.push({
+          id: 'low_fertility',
+          type: 'Low Fertility Warning',
+          priority: 'Critical',
+          message: `Breeding success rate is currently ${analytics.pregnancySuccessRate}% (<60% across ${analytics.totalServices} services). Vet evaluation and libido checks required.`
+        });
+      }
     }
 
     // 4. Disease Testing Reminder (Last health test > 180 days ago or none exists)
@@ -350,6 +372,20 @@ export default function BoarDetailPage() {
     }
   };
 
+  const handleFatteningSubmit = async (e) => {
+    e.preventDefault();
+    setFormError('');
+    try {
+      const { useBoarStore } = await import('../../../store/useBoarStore');
+      await useBoarStore.getState().moveToFattening(id, castrationStatus, fatteningReason);
+      setIsFatteningOpen(false);
+      alert('Boar successfully retired and moved to Fattening.');
+      fetchBoarById(id);
+    } catch (err) {
+      setFormError(err.message);
+    }
+  };
+
   // Maturity CTA handlers
   const handleMarkPuberty = async () => {
     if (window.confirm("Confirm Boar Puberty Reach? This updates the breeding status model.")) {
@@ -381,7 +417,7 @@ export default function BoarDetailPage() {
     }
   };
 
-  const isFetching = loading || (!selectedBoar && !error) || (selectedBoar && selectedBoar._id !== id && !error);
+  const isFetching = loading || (!selectedBoar && !error) || (selectedBoar && selectedBoar._id !== id && selectedBoar.animalNo !== id && !error);
 
   if (isFetching) {
     return (
@@ -438,7 +474,7 @@ export default function BoarDetailPage() {
                 Boar Card: <span className="text-primary font-black select-all">{selectedBoar.animalNo}</span>
               </h2>
               <p className="text-[9px] text-textSecondary uppercase tracking-widest mt-1">
-                Breed: {selectedBoar.breed} • Age: {ageInMonths} Months Old ({ageInDays} days) • Source: {selectedBoar.source === 'GrowerPromotion' ? 'Grower Promotion' : 'Direct Register'}
+                Breed: {selectedBoar.breed} {selectedBoar.purpose === 'Fattening' ? '• Fattening Retired' : ''} {selectedBoar.castrationStatus === 'Castrated' ? '• Castrated' : ''} • Age: {ageInMonths} Months Old ({ageInDays} days) • Source: {selectedBoar.source === 'GrowerPromotion' ? 'Grower Promotion' : 'Direct Register'}
               </p>
             </div>
           </div>
@@ -483,13 +519,29 @@ export default function BoarDetailPage() {
             )}
 
             {canEdit && !isInactive && (
-              <button
-                onClick={handleOpenEditDetails}
-                className="px-3 py-2 bg-primary hover:bg-primary-dark text-black text-xs font-bold rounded shadow-md hover:shadow-glow transition-all flex items-center gap-1.5 uppercase tracking-wider"
-              >
-                <Edit className="w-3.5 h-3.5" />
-                Edit Details
-              </button>
+              <div className="flex items-center gap-1.5">
+                {selectedBoar.purpose !== 'Fattening' && selectedBoar.castrationStatus !== 'Castrated' && (
+                  <button
+                    onClick={() => {
+                      setFormError('');
+                      setFatteningReason('');
+                      setCastrationStatus('Not Castrated');
+                      setIsFatteningOpen(true);
+                    }}
+                    className="px-3 py-2 bg-warning hover:bg-warning/80 text-black text-xs font-bold rounded shadow-md transition-all flex items-center gap-1.5 uppercase tracking-wider"
+                  >
+                    <Activity className="w-3.5 h-3.5" />
+                    Move to Fattening
+                  </button>
+                )}
+                <button
+                  onClick={handleOpenEditDetails}
+                  className="px-3 py-2 bg-primary hover:bg-primary-dark text-black text-xs font-bold rounded shadow-md hover:shadow-glow transition-all flex items-center gap-1.5 uppercase tracking-wider"
+                >
+                  <Edit className="w-3.5 h-3.5" />
+                  Edit Details
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -525,52 +577,54 @@ export default function BoarDetailPage() {
         )}
 
         {/* ========================================================
-            SECTION 7: HORIZONTAL LIFECYCLE TIMELINE
+            SECTION 7: TIMELINE
             ======================================================== */}
-        <div className="bg-cardBg border border-borderDark rounded-lg p-5 no-print">
-          <div className="flex items-center justify-between border-b border-borderDark/50 pb-2 mb-4">
-            <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 7: Breeding Lifecycle & Maturity Timeline</span>
-            <span className="text-[9px] text-textSecondary uppercase font-mono">Current Status: {currentBStatus}</span>
-          </div>
+        {selectedBoar.purpose !== 'Fattening' && selectedBoar.castrationStatus !== 'Castrated' && (
+          <div className="bg-cardBg border border-borderDark rounded-lg p-5 no-print">
+            <div className="flex items-center justify-between border-b border-borderDark/50 pb-2 mb-4">
+              <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 7: Breeding Lifecycle & Maturity Timeline</span>
+              <span className="text-[9px] text-textSecondary uppercase font-mono">Current Status: {currentBStatus}</span>
+            </div>
 
-          <div className="relative flex items-center justify-between w-full mt-6 px-4">
-            {/* Timeline Progress Bar Line */}
-            <div className="absolute left-6 right-6 top-1/2 -translate-y-1/2 h-1 bg-borderDark/60 z-0"></div>
-            
-            {[
-              { label: 'Grower Stage', status: 'Growing', age: '>=150 days' },
-              { label: 'Puberty Reached', status: 'Puberty Reached', age: '180-210 days' },
-              { label: 'Breeding Ready', status: 'Breeding Ready', age: 'Approved Vet Check' },
-              { label: 'Breeding Active', status: 'Breeding Active', age: 'Active Mating' },
-              { label: 'Retired / Culled', status: 'Retired', age: 'Retired Breeder' }
-            ].map((step, idx, arr) => {
-              const statusSequence = ['Growing', 'Puberty Reached', 'Breeding Ready', 'Breeding Active', 'Retired', 'Sold', 'Dead'];
-              const currentIdx = statusSequence.indexOf(currentBStatus);
-              const stepIdx = statusSequence.indexOf(step.status);
+            <div className="relative flex items-center justify-between w-full mt-6 px-4">
+              {/* Timeline Progress Bar Line */}
+              <div className="absolute left-6 right-6 top-1/2 -translate-y-1/2 h-1 bg-borderDark/60 z-0"></div>
               
-              const isPast = currentIdx >= stepIdx;
-              const isCurrent = currentBStatus === step.status || (step.status === 'Retired' && (currentBStatus === 'Retired' || currentBStatus === 'Dead' || currentBStatus === 'Sold'));
+              {[
+                { label: 'Grower Stage', status: 'Growing', age: '>=150 days' },
+                { label: 'Puberty Reached', status: 'Puberty Reached', age: `${boarPubertyAge} days` },
+                { label: 'Breeding Ready', status: 'Breeding Ready', age: 'Approved Vet Check' },
+                { label: 'Breeding Active', status: 'Breeding Active', age: 'Active Mating' },
+                { label: 'Retired / Culled', status: 'Retired', age: 'Retired Breeder' }
+              ].map((step, idx, arr) => {
+                const statusSequence = ['Growing', 'Puberty Reached', 'Breeding Ready', 'Breeding Active', 'Retired', 'Sold', 'Dead'];
+                const currentIdx = statusSequence.indexOf(currentBStatus);
+                const stepIdx = statusSequence.indexOf(step.status);
+                
+                const isPast = currentIdx >= stepIdx;
+                const isCurrent = currentBStatus === step.status || (step.status === 'Retired' && (currentBStatus === 'Retired' || currentBStatus === 'Dead' || currentBStatus === 'Sold'));
 
-              return (
-                <div key={idx} className="relative z-10 flex flex-col items-center">
-                  <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all ${
-                    isCurrent 
-                      ? 'bg-primary border-primary text-black font-extrabold shadow-glow' 
-                      : isPast 
-                      ? 'bg-sidebar border-success text-success' 
-                      : 'bg-sidebar border-borderDark text-textSecondary'
-                  }`}>
-                    {isCurrent ? <Activity className="w-4 h-4 animate-spin-slow" /> : isPast ? <CheckCircle className="w-4.5 h-4.5" /> : idx + 1}
+                return (
+                  <div key={idx} className="relative z-10 flex flex-col items-center">
+                    <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all ${
+                      isCurrent 
+                        ? 'bg-primary border-primary text-black font-extrabold shadow-glow' 
+                        : isPast 
+                        ? 'bg-sidebar border-success text-success' 
+                        : 'bg-sidebar border-borderDark text-textSecondary'
+                    }`}>
+                      {isCurrent ? <Activity className="w-4 h-4 animate-spin-slow" /> : isPast ? <CheckCircle className="w-4.5 h-4.5" /> : idx + 1}
+                    </div>
+                    <span className={`text-[10px] font-bold mt-2 uppercase tracking-wide ${isCurrent ? 'text-primary' : isPast ? 'text-success' : 'text-textSecondary'}`}>
+                      {step.label}
+                    </span>
+                    <span className="text-[8px] text-textSecondary uppercase font-mono mt-0.5">{step.age}</span>
                   </div>
-                  <span className={`text-[10px] font-bold mt-2 uppercase tracking-wide ${isCurrent ? 'text-primary' : isPast ? 'text-success' : 'text-textSecondary'}`}>
-                    {step.label}
-                  </span>
-                  <span className="text-[8px] text-textSecondary uppercase font-mono mt-0.5">{step.age}</span>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Screen Layout Grid (Visible on Screen, Hidden on Print) */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 w-full print:hidden">
@@ -593,7 +647,7 @@ export default function BoarDetailPage() {
                 <div className="bg-sidebar/30 border border-borderDark/50 rounded p-3 text-center">
                   <p className="text-[9px] text-textSecondary uppercase font-bold tracking-wider">Date of Puberty</p>
                   <h4 className="text-xs font-black text-textPrimary mt-1.5">
-                    {selectedBoar.pubertyDate ? new Date(selectedBoar.pubertyDate).toLocaleDateString() : 'Pending'}
+                    {selectedBoar.pubertyDate ? formatDate(selectedBoar.pubertyDate) : 'Pending'}
                   </h4>
                   <p className="text-[8px] text-textSecondary mt-0.5 uppercase">Maturity Date</p>
                 </div>
@@ -631,150 +685,155 @@ export default function BoarDetailPage() {
               </div>
             </div>
 
-            {/* Section 2: Puberty & Breeding Readiness Management Action Panel */}
-            <div className="bg-cardBg border border-borderDark rounded-lg p-5">
-              <div className="flex items-center justify-between border-b border-borderDark/50 pb-2 mb-4">
-                <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 2: Puberty & Breeding Readiness Track</span>
-                <span className="text-[8px] text-danger uppercase font-bold">Manual approval checks required</span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                
-                {/* Puberty Step */}
-                <div className="bg-sidebar p-3.5 border border-borderDark rounded-lg flex flex-col justify-between">
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-textPrimary block">Step 1 — Mark Puberty</span>
-                    <p className="text-[9px] text-textSecondary leading-relaxed mt-1">
-                      Mark when grower male reaches puberty (typical age 180-210 days). Erection/libido signs.
-                    </p>
+            {/* Section 2 & 3: Maturity & Services */}
+            {selectedBoar.purpose !== 'Fattening' && selectedBoar.castrationStatus !== 'Castrated' && (
+              <>
+                {/* Section 2: Puberty & Breeding Readiness Management Action Panel */}
+                <div className="bg-cardBg border border-borderDark rounded-lg p-5">
+                  <div className="flex items-center justify-between border-b border-borderDark/50 pb-2 mb-4">
+                    <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 2: Puberty & Breeding Readiness Track</span>
+                    <span className="text-[8px] text-danger uppercase font-bold">Manual approval checks required</span>
                   </div>
-                  <div className="mt-4 pt-3 border-t border-borderDark/40 flex flex-col gap-2">
-                    <input 
-                      type="date" 
-                      value={pubertyDateInput}
-                      onChange={(e) => setPubertyDateInput(e.target.value)}
-                      disabled={selectedBoar.pubertyDate}
-                      className="dense-input" 
-                    />
-                    <button
-                      onClick={handleMarkPuberty}
-                      disabled={selectedBoar.pubertyDate || isInactive}
-                      className="w-full py-1.5 bg-sidebar hover:bg-cardBg disabled:opacity-40 disabled:cursor-not-allowed border border-borderDark text-[10px] uppercase font-bold tracking-wider text-textPrimary hover:text-primary rounded"
-                    >
-                      {selectedBoar.pubertyDate ? 'Puberty Reached ✔' : 'Confirm Puberty'}
-                    </button>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    
+                    {/* Puberty Step */}
+                    <div className="bg-sidebar p-3.5 border border-borderDark rounded-lg flex flex-col justify-between">
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-textPrimary block">Step 1 — Mark Puberty</span>
+                        <p className="text-[9px] text-textSecondary leading-relaxed mt-1">
+                          Mark when grower male reaches puberty (typical age {boarPubertyAge} days). Erection/libido signs.
+                        </p>
+                      </div>
+                      <div className="mt-4 pt-3 border-t border-borderDark/40 flex flex-col gap-2">
+                        <input 
+                          type="date" 
+                          value={pubertyDateInput}
+                          onChange={(e) => setPubertyDateInput(e.target.value)}
+                          disabled={selectedBoar.pubertyDate}
+                          className="dense-input" 
+                        />
+                        <button
+                          onClick={handleMarkPuberty}
+                          disabled={selectedBoar.pubertyDate || isInactive}
+                          className="w-full py-1.5 bg-sidebar hover:bg-cardBg disabled:opacity-40 disabled:cursor-not-allowed border border-borderDark text-[10px] uppercase font-bold tracking-wider text-textPrimary hover:text-primary rounded"
+                        >
+                          {selectedBoar.pubertyDate ? 'Puberty Reached ✔' : 'Confirm Puberty'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Semen Readiness Step */}
+                    <div className="bg-sidebar p-3.5 border border-borderDark rounded-lg flex flex-col justify-between">
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-textPrimary block">Step 2 — Breeding Ready</span>
+                        <p className="text-[9px] text-textSecondary leading-relaxed mt-1">
+                          Require manual veterinary approval of first semen collection, motility, and health.
+                        </p>
+                      </div>
+                      <div className="mt-4 pt-3 border-t border-borderDark/40 flex flex-col gap-2">
+                        <FormField label="Semen Collect Date">
+                          <input 
+                            type="date" 
+                            value={semenDateInput} 
+                            onChange={(e) => setSemenDateInput(e.target.value)} 
+                            disabled={selectedBoar.breedingReadyDate}
+                            className="dense-input text-[10px]" 
+                          />
+                        </FormField>
+                        <button
+                          onClick={handleMarkBreedingReady}
+                          disabled={!selectedBoar.pubertyDate || selectedBoar.breedingReadyDate || isInactive}
+                          className="w-full py-1.5 bg-primary disabled:opacity-40 disabled:cursor-not-allowed text-black text-[10px] uppercase font-black tracking-wider rounded"
+                        >
+                          {selectedBoar.breedingReadyDate ? 'Breeding Ready ✔' : 'Approve Ready'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Active Breeder Step */}
+                    <div className="bg-sidebar p-3.5 border border-borderDark rounded-lg flex flex-col justify-between">
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-textPrimary block">Step 3 — Active Breeding</span>
+                        <p className="text-[9px] text-textSecondary leading-relaxed mt-1">
+                          Promote to fully active sire status once successful natural services or AI doses begin.
+                        </p>
+                      </div>
+                      <div className="mt-4 pt-3 border-t border-borderDark/40 flex flex-col gap-2">
+                        <FormField label="Fertility Approval">
+                          <input 
+                            type="date" 
+                            value={approvalDateInput} 
+                            onChange={(e) => setApprovalDateInput(e.target.value)} 
+                            disabled={currentBStatus === 'Breeding Active'}
+                            className="dense-input text-[10px]" 
+                          />
+                        </FormField>
+                        <button
+                          onClick={handleMarkActiveBreeder}
+                          disabled={!selectedBoar.breedingReadyDate || currentBStatus === 'Breeding Active' || isInactive}
+                          className="w-full py-1.5 bg-success disabled:opacity-40 disabled:cursor-not-allowed text-white text-[10px] uppercase font-bold tracking-wider rounded"
+                        >
+                          {currentBStatus === 'Breeding Active' ? 'Breeding Active ✔' : 'Activate Sire'}
+                        </button>
+                      </div>
+                    </div>
+
                   </div>
                 </div>
 
-                {/* Semen Readiness Step */}
-                <div className="bg-sidebar p-3.5 border border-borderDark rounded-lg flex flex-col justify-between">
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-textPrimary block">Step 2 — Breeding Ready</span>
-                    <p className="text-[9px] text-textSecondary leading-relaxed mt-1">
-                      Require manual veterinary approval of first semen collection, motility, and health.
-                    </p>
+                {/* Section 3: Breeding Service Reference History */}
+                <div className="bg-cardBg border border-borderDark rounded-lg p-5">
+                  <div className="flex items-center justify-between border-b border-borderDark/50 pb-2 mb-4">
+                    <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 3: Breeding Service Reference ledger</span>
+                    <span className="text-[8px] text-textSecondary uppercase font-mono">Reference data from Breeding module</span>
                   </div>
-                  <div className="mt-4 pt-3 border-t border-borderDark/40 flex flex-col gap-2">
-                    <FormField label="Semen Collect Date">
-                      <input 
-                        type="date" 
-                        value={semenDateInput} 
-                        onChange={(e) => setSemenDateInput(e.target.value)} 
-                        disabled={selectedBoar.breedingReadyDate}
-                        className="dense-input text-[10px]" 
-                      />
-                    </FormField>
-                    <button
-                      onClick={handleMarkBreedingReady}
-                      disabled={!selectedBoar.pubertyDate || selectedBoar.breedingReadyDate || isInactive}
-                      className="w-full py-1.5 bg-primary disabled:opacity-40 disabled:cursor-not-allowed text-black text-[10px] uppercase font-black tracking-wider rounded"
-                    >
-                      {selectedBoar.breedingReadyDate ? 'Breeding Ready ✔' : 'Approve Ready'}
-                    </button>
-                  </div>
-                </div>
 
-                {/* Active Breeder Step */}
-                <div className="bg-sidebar p-3.5 border border-borderDark rounded-lg flex flex-col justify-between">
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-textPrimary block">Step 3 — Active Breeding</span>
-                    <p className="text-[9px] text-textSecondary leading-relaxed mt-1">
-                      Promote to fully active sire status once successful natural services or AI doses begin.
-                    </p>
-                  </div>
-                  <div className="mt-4 pt-3 border-t border-borderDark/40 flex flex-col gap-2">
-                    <FormField label="Fertility Approval">
-                      <input 
-                        type="date" 
-                        value={approvalDateInput} 
-                        onChange={(e) => setApprovalDateInput(e.target.value)} 
-                        disabled={currentBStatus === 'Breeding Active'}
-                        className="dense-input text-[10px]" 
-                      />
-                    </FormField>
-                    <button
-                      onClick={handleMarkActiveBreeder}
-                      disabled={!selectedBoar.breedingReadyDate || currentBStatus === 'Breeding Active' || isInactive}
-                      className="w-full py-1.5 bg-success disabled:opacity-40 disabled:cursor-not-allowed text-white text-[10px] uppercase font-bold tracking-wider rounded"
-                    >
-                      {currentBStatus === 'Breeding Active' ? 'Breeding Active ✔' : 'Activate Sire'}
-                    </button>
-                  </div>
-                </div>
-
-              </div>
-            </div>
-
-            {/* Section 3: Breeding Service Reference History */}
-            <div className="bg-cardBg border border-borderDark rounded-lg p-5">
-              <div className="flex items-center justify-between border-b border-borderDark/50 pb-2 mb-4">
-                <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 3: Breeding Service Reference ledger</span>
-                <span className="text-[8px] text-textSecondary uppercase font-mono">Reference data from Breeding module</span>
-              </div>
-
-              <div className="overflow-x-auto w-full">
-                <table className="w-full text-left border-collapse text-xs select-none">
-                  <thead>
-                    <tr className="border-b border-borderDark/80 text-textSecondary text-[10px] uppercase tracking-wider bg-sidebar/55">
-                      <th className="py-2.5 px-3">Service Date</th>
-                      <th className="py-2.5 px-3">Sow Number</th>
-                      <th className="py-2.5 px-3">Mating Type</th>
-                      <th className="py-2.5 px-3">Pregnancy Result</th>
-                      <th className="py-2.5 px-3">Litter Size</th>
-                      <th className="py-2.5 px-3">Weaning Count</th>
-                      <th className="py-2.5 px-3">Breeding Outcome</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {services.length > 0 ? (
-                      services.map((serv, idx) => (
-                        <tr key={idx} className="border-b border-borderDark/30 hover:bg-sidebar/35 transition-colors">
-                          <td className="py-2.5 px-3 font-mono">{serv.serviceDate}</td>
-                          <td className="py-2.5 px-3 font-bold text-primary select-all">{serv.sowNo}</td>
-                          <td className="py-2.5 px-3 uppercase text-[10px]">{serv.matingType}</td>
-                          <td className="py-2.5 px-3">
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                              serv.pregnancyResult === 'Confirmed' ? 'text-success bg-success/10' : 'text-danger bg-danger/10'
-                            }`}>
-                              {serv.pregnancyResult}
-                            </span>
-                          </td>
-                          <td className="py-2.5 px-3 font-bold font-mono">{serv.litterSize}</td>
-                          <td className="py-2.5 px-3 font-semibold font-mono">{serv.weaningCount}</td>
-                          <td className="py-2.5 px-3 text-textSecondary italic">{serv.breedingOutcome}</td>
+                  <div className="overflow-x-auto w-full">
+                    <table className="w-full text-left border-collapse text-xs select-none">
+                      <thead>
+                        <tr className="border-b border-borderDark/80 text-textSecondary text-[10px] uppercase tracking-wider bg-sidebar/55">
+                          <th className="py-2.5 px-3">Service Date</th>
+                          <th className="py-2.5 px-3">Sow Number</th>
+                          <th className="py-2.5 px-3">Mating Type</th>
+                          <th className="py-2.5 px-3">Pregnancy Result</th>
+                          <th className="py-2.5 px-3">Litter Size</th>
+                          <th className="py-2.5 px-3">Weaning Count</th>
+                          <th className="py-2.5 px-3">Breeding Outcome</th>
                         </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={7} className="py-8 text-center italic text-textSecondary">
-                          No service matings logged. Only ready and active boars will show service references here.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+                      </thead>
+                      <tbody>
+                        {services.length > 0 ? (
+                          services.map((serv, idx) => (
+                            <tr key={idx} className="border-b border-borderDark/30 hover:bg-sidebar/35 transition-colors">
+                              <td className="py-2.5 px-3 font-mono">{serv.serviceDate}</td>
+                              <td className="py-2.5 px-3 font-bold text-primary select-all">{serv.sowNo}</td>
+                              <td className="py-2.5 px-3 uppercase text-[10px]">{serv.matingType}</td>
+                              <td className="py-2.5 px-3">
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                  serv.pregnancyResult === 'Confirmed' ? 'text-success bg-success/10' : 'text-danger bg-danger/10'
+                                }`}>
+                                  {serv.pregnancyResult}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 font-bold font-mono">{serv.litterSize}</td>
+                              <td className="py-2.5 px-3 font-semibold font-mono">{serv.weaningCount}</td>
+                              <td className="py-2.5 px-3 text-textSecondary italic">{serv.breedingOutcome}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={7} className="py-8 text-center italic text-textSecondary">
+                              No service matings logged. Only ready and active boars will show service references here.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
 
             {/* Section 5: Health & Genetic Tracking */}
             <div className="bg-cardBg border border-borderDark rounded-lg p-5">
@@ -829,7 +888,7 @@ export default function BoarDetailPage() {
                     {selectedBoar.healthTests && selectedBoar.healthTests.length > 0 ? (
                       selectedBoar.healthTests.map((test, idx) => (
                         <tr key={idx} className="border-b border-borderDark/30 hover:bg-sidebar/20">
-                          <td className="py-2 px-3 font-mono">{new Date(test.testDate).toLocaleDateString()}</td>
+                          <td className="py-2 px-3 font-mono">{formatDate(test.testDate)}</td>
                           <td className={`py-2 px-3 font-bold uppercase ${test.diseaseResult === 'Positive' ? 'text-danger' : 'text-success'}`}>
                             {test.diseaseResult}
                           </td>
@@ -875,7 +934,7 @@ export default function BoarDetailPage() {
                           <span className="font-bold text-textPrimary">{log.diagnosis}</span>
                           <span className="text-[9px] text-textSecondary bg-cardBg border border-borderDark px-1.5 py-0.5 rounded uppercase font-semibold">{log.recoveryStatus}</span>
                         </div>
-                        <span className="text-[10px] text-textSecondary font-mono">{new Date(log.treatmentDate).toLocaleDateString()}</span>
+                        <span className="text-[10px] text-textSecondary font-mono">{formatDate(log.treatmentDate)}</span>
                       </div>
                       <p className="mb-2"><span className="text-textSecondary font-semibold">Symptoms:</span> {log.symptoms}</p>
                       <div className="grid grid-cols-2 gap-4 text-[11px] bg-cardBg/40 p-2 rounded border border-borderDark/40">
@@ -902,65 +961,67 @@ export default function BoarDetailPage() {
           <div className="flex flex-col gap-5">
             
             {/* Section 4: Fertility Analytics Dashboard */}
-            <div className="bg-cardBg border border-borderDark rounded-lg p-5">
-              <div className="flex items-center justify-between border-b border-borderDark/50 pb-2 mb-4">
-                <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 4: Fertility & Mating Analytics</span>
-                <span className="text-[8px] bg-primary/20 text-primary border border-primary/20 px-2 py-0.5 rounded font-black uppercase">Sire Efficiency</span>
+            {selectedBoar.purpose !== 'Fattening' && selectedBoar.castrationStatus !== 'Castrated' && (
+              <div className="bg-cardBg border border-borderDark rounded-lg p-5">
+                <div className="flex items-center justify-between border-b border-borderDark/50 pb-2 mb-4">
+                  <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 4: Fertility & Mating Analytics</span>
+                  <span className="text-[8px] bg-primary/20 text-primary border border-primary/20 px-2 py-0.5 rounded font-black uppercase">Sire Efficiency</span>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  
+                  <div className="bg-sidebar border border-borderDark/80 p-4 rounded text-center relative overflow-hidden">
+                    <span className="text-[9px] uppercase font-bold text-textSecondary tracking-wider block">Pregnancy Success Rate</span>
+                    <h2 className={`text-3xl font-black mt-2 ${analytics.pregnancySuccessRate < 60 && analytics.totalServices >= 3 ? 'text-danger' : 'text-success'}`}>
+                      {analytics.pregnancySuccessRate}%
+                    </h2>
+                    <span className="text-[8px] text-textSecondary uppercase mt-1 block">Pregnancies: {analytics.successfulPregnancies} / {analytics.totalServices} Services</span>
+                    {analytics.pregnancySuccessRate < 60 && analytics.totalServices >= 3 && (
+                      <div className="mt-2 text-[9px] text-danger uppercase font-bold">⚠️ Warning: Sub-Optimal Fertility</div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3.5">
+                    <div className="bg-sidebar p-3 border border-borderDark rounded text-center">
+                      <span className="text-[8px] text-textSecondary uppercase block">Avg Litter Size</span>
+                      <span className="font-extrabold text-sm text-textPrimary mt-1 block">{analytics.averageLitterSize} piglets</span>
+                    </div>
+                    <div className="bg-sidebar p-3 border border-borderDark rounded text-center">
+                      <span className="text-[8px] text-textSecondary uppercase block">Total Piglets</span>
+                      <span className="font-extrabold text-sm text-textPrimary mt-1 block">{analytics.totalPigletsBorn} born</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3.5">
+                    <div className="bg-sidebar p-3 border border-borderDark rounded text-center">
+                      <span className="text-[8px] text-textSecondary uppercase block">Avg Weaning Count</span>
+                      <span className="font-extrabold text-sm text-textPrimary mt-1 block">{analytics.averageWeaningCount} weaned</span>
+                    </div>
+                    <div className="bg-sidebar p-3 border border-borderDark rounded text-center">
+                      <span className="text-[8px] text-textSecondary uppercase block">Survival Rate</span>
+                      <span className="font-extrabold text-sm text-success mt-1 block">{analytics.survivalRate}%</span>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-borderDark/50 pt-3 text-xs leading-normal">
+                    <span className="text-[9px] uppercase font-bold text-textSecondary block mb-1">Reproductive Metrics Audit</span>
+                    <div className="flex justify-between py-1 border-b border-borderDark/30 text-[11px]">
+                      <span className="text-textSecondary">Total Mated Services</span>
+                      <span className="font-bold text-textPrimary font-mono">{analytics.totalServices}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-borderDark/30 text-[11px]">
+                      <span className="text-textSecondary"> ultrasound Confirmed</span>
+                      <span className="font-bold text-success font-mono">{analytics.successfulPregnancies}</span>
+                    </div>
+                    <div className="flex justify-between py-1 text-[11px]">
+                      <span className="text-textSecondary">Failed Mating Services</span>
+                      <span className="font-bold text-danger font-mono">{analytics.failedServices}</span>
+                    </div>
+                  </div>
+
+                </div>
               </div>
-
-              <div className="flex flex-col gap-3">
-                
-                <div className="bg-sidebar border border-borderDark/80 p-4 rounded text-center relative overflow-hidden">
-                  <span className="text-[9px] uppercase font-bold text-textSecondary tracking-wider block">Pregnancy Success Rate</span>
-                  <h2 className={`text-3xl font-black mt-2 ${analytics.pregnancySuccessRate < 60 && analytics.totalServices >= 3 ? 'text-danger' : 'text-success'}`}>
-                    {analytics.pregnancySuccessRate}%
-                  </h2>
-                  <span className="text-[8px] text-textSecondary uppercase mt-1 block">Pregnancies: {analytics.successfulPregnancies} / {analytics.totalServices} Services</span>
-                  {analytics.pregnancySuccessRate < 60 && analytics.totalServices >= 3 && (
-                    <div className="mt-2 text-[9px] text-danger uppercase font-bold">⚠️ Warning: Sub-Optimal Fertility</div>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-3.5">
-                  <div className="bg-sidebar p-3 border border-borderDark rounded text-center">
-                    <span className="text-[8px] text-textSecondary uppercase block">Avg Litter Size</span>
-                    <span className="font-extrabold text-sm text-textPrimary mt-1 block">{analytics.averageLitterSize} piglets</span>
-                  </div>
-                  <div className="bg-sidebar p-3 border border-borderDark rounded text-center">
-                    <span className="text-[8px] text-textSecondary uppercase block">Total Piglets</span>
-                    <span className="font-extrabold text-sm text-textPrimary mt-1 block">{analytics.totalPigletsBorn} born</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3.5">
-                  <div className="bg-sidebar p-3 border border-borderDark rounded text-center">
-                    <span className="text-[8px] text-textSecondary uppercase block">Avg Weaning Count</span>
-                    <span className="font-extrabold text-sm text-textPrimary mt-1 block">{analytics.averageWeaningCount} weaned</span>
-                  </div>
-                  <div className="bg-sidebar p-3 border border-borderDark rounded text-center">
-                    <span className="text-[8px] text-textSecondary uppercase block">Survival Rate</span>
-                    <span className="font-extrabold text-sm text-success mt-1 block">{analytics.survivalRate}%</span>
-                  </div>
-                </div>
-
-                <div className="border-t border-borderDark/50 pt-3 text-xs leading-normal">
-                  <span className="text-[9px] uppercase font-bold text-textSecondary block mb-1">Reproductive Metrics Audit</span>
-                  <div className="flex justify-between py-1 border-b border-borderDark/30 text-[11px]">
-                    <span className="text-textSecondary">Total Mated Services</span>
-                    <span className="font-bold text-textPrimary font-mono">{analytics.totalServices}</span>
-                  </div>
-                  <div className="flex justify-between py-1 border-b border-borderDark/30 text-[11px]">
-                    <span className="text-textSecondary"> ultrasound Confirmed</span>
-                    <span className="font-bold text-success font-mono">{analytics.successfulPregnancies}</span>
-                  </div>
-                  <div className="flex justify-between py-1 text-[11px]">
-                    <span className="text-textSecondary">Failed Mating Services</span>
-                    <span className="font-bold text-danger font-mono">{analytics.failedServices}</span>
-                  </div>
-                </div>
-
-              </div>
-            </div>
+            )}
 
             {/* Breeder Notes */}
             <div className="bg-cardBg border border-borderDark rounded-lg p-5">
@@ -993,7 +1054,7 @@ export default function BoarDetailPage() {
                         <span className="text-[10px] text-textSecondary font-bold">→</span>
                         <span className="font-extrabold uppercase text-textPrimary">{history.newStatus || history.status}</span>
                       </div>
-                      <span className="text-[9px] text-textSecondary font-mono">{new Date(history.changeDate || history.updatedAt).toLocaleDateString()}</span>
+                      <span className="text-[9px] text-textSecondary font-mono">{formatDate(history.changeDate || history.updatedAt)}</span>
                     </div>
                     {history.notes && <p className="text-[11px] text-textSecondary leading-normal mt-1 border-t border-borderDark/30 pt-1 select-all">{history.notes}</p>}
                     <div className="text-[9px] text-textSecondary/60 mt-1 uppercase text-right tracking-wider">Updated By: {history.updatedBy}</div>
@@ -1017,7 +1078,7 @@ export default function BoarDetailPage() {
             <div className="grid grid-cols-3 gap-4 border-b border-black pb-4 text-[11px]">
               <div><strong>Boar Animal No:</strong> <span className="underline font-sans font-bold text-sm">{selectedBoar.animalNo}</span></div>
               <div><strong>Breed:</strong> <span className="underline">{selectedBoar.breed}</span></div>
-              <div><strong>DOB:</strong> <span className="underline">{new Date(selectedBoar.dob).toLocaleDateString()}</span></div>
+              <div><strong>DOB:</strong> <span className="underline">{formatDate(selectedBoar.dob)}</span></div>
               <div><strong>Sire No (Father):</strong> <span className="underline">{selectedBoar.sireNo}</span></div>
               <div><strong>Dam No (Mother):</strong> <span className="underline">{selectedBoar.damNo}</span></div>
               <div><strong>Latest Weight:</strong> <span className="underline font-sans font-bold">{selectedBoar.latestWeight || '150'} kg</span></div>
@@ -1082,7 +1143,7 @@ export default function BoarDetailPage() {
                   {selectedBoar.healthTests && selectedBoar.healthTests.length > 0 ? (
                     selectedBoar.healthTests.map((ht, idx) => (
                       <tr key={idx} className="border-b border-gray-300">
-                        <td className="py-1">{new Date(ht.testDate).toLocaleDateString()}</td>
+                        <td className="py-1">{formatDate(ht.testDate)}</td>
                         <td className="py-1 uppercase font-bold">{ht.diseaseResult}</td>
                         <td className="py-1 uppercase">{ht.defectsFound}</td>
                         <td className="py-1 italic">{ht.vetNotes}</td>
@@ -1489,6 +1550,65 @@ export default function BoarDetailPage() {
                   value={healthTestData.vetNotes}
                   onChange={(e) => setHealthTestData({ ...healthTestData, vetNotes: e.target.value })}
                   className="dense-input w-full p-2"
+                />
+              </FormField>
+            </FormSection>
+          </form>
+        </Modal>
+
+        {/* ========================================================
+            MODAL 5: MOVE TO FATTENING (RETIREMENT)
+            ======================================================== */}
+        <Modal
+          isOpen={isFatteningOpen}
+          onClose={() => setIsFatteningOpen(false)}
+          title={`Retire Boar ${selectedBoar.animalNo} to Fattening`}
+          footer={
+            <>
+              <button 
+                onClick={() => setIsFatteningOpen(false)}
+                className="px-4 py-2 hover:bg-cardBg border border-borderDark text-textSecondary text-xs rounded uppercase font-bold"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleFatteningSubmit}
+                className="px-4 py-2 bg-warning hover:bg-warning/80 text-black text-xs rounded uppercase font-bold shadow-md"
+              >
+                Confirm Retirement
+              </button>
+            </>
+          }
+        >
+          <form className="flex flex-col gap-4 text-xs">
+            {formError && (
+              <div className="bg-danger/10 border border-danger/25 p-3 rounded text-danger font-medium text-[11px]">
+                {formError}
+              </div>
+            )}
+            
+            <FormSection title="Castration Status">
+              <FormField label="Retirement Castration Status" required>
+                <select
+                  value={castrationStatus}
+                  onChange={(e) => setCastrationStatus(e.target.value)}
+                  className="dense-select"
+                >
+                  <option value="Not Castrated">Not Castrated (Keeps Boar intact)</option>
+                  <option value="Castrated">Castrated (Strictly disables breeding features)</option>
+                </select>
+              </FormField>
+            </FormSection>
+
+            <FormSection title="Retirement Reason">
+              <FormField label="Reason for moving to Fattening" required>
+                <textarea
+                  rows={3}
+                  placeholder="e.g. Old age, poor semen quality, low fertility, breeding retired..."
+                  value={fatteningReason}
+                  onChange={(e) => setFatteningReason(e.target.value)}
+                  className="dense-input w-full p-2"
+                  required
                 />
               </FormField>
             </FormSection>

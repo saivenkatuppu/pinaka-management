@@ -111,19 +111,19 @@ export const useSaleStore = create((set, get) => ({
         console.error("Sale Boar sync failed:", err);
       }
 
-      // Sync with Grower Store
+      // Sync with Piglet Store
       try {
-        const { useGrowerStore } = await import('./useGrowerStore');
-        const growerStore = useGrowerStore.getState();
-        const targetGrower = growerStore.growers.find(g => g.animalNo === data.animalId);
-        if (targetGrower) {
-          const growersList = JSON.parse(localStorage.getItem('pinaka_growers') || '[]');
-          const updatedGrowers = growersList.map(g => g._id === targetGrower._id ? { ...g, status: 'Sold' } : g);
-          localStorage.setItem('pinaka_growers', JSON.stringify(updatedGrowers));
-          await growerStore.fetchGrowers();
+        const { usePigletStore } = await import('./usePigletStore');
+        const pigletStore = usePigletStore.getState();
+        const targetPiglet = pigletStore.piglets.find(g => g.animalNo === data.animalId);
+        if (targetPiglet) {
+          const pigletsList = JSON.parse(localStorage.getItem('pinaka_piglets') || '[]');
+          const updatedPiglets = pigletsList.map(g => g._id === targetPiglet._id ? { ...g, status: 'Sold' } : g);
+          localStorage.setItem('pinaka_piglets', JSON.stringify(updatedPiglets));
+          await pigletStore.fetchPiglets();
         }
       } catch (err) {
-        console.error("Sale Grower sync failed:", err);
+        console.error("Sale Piglet sync failed:", err);
       }
 
       set({ sales: updatedList, loading: false });

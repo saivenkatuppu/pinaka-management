@@ -6,11 +6,13 @@ import dotenv from 'dotenv';
 import { connectDB } from './config/db.js';
 import errorMiddleware from './middleware/errorMiddleware.js';
 import authRoutes from './routes/authRoutes.js';
-import growerRoutes from './routes/growerRoutes.js';
+import animalRoutes from './routes/animalRoutes.js';
+import pigletRoutes from './routes/pigletRoutes.js';
 import sowRoutes from './routes/sowRoutes.js';
 import boarRoutes from './routes/boarRoutes.js';
 import breedingRoutes from './routes/breedingRoutes.js';
 import farrowingRoutes from './routes/farrowingRoutes.js';
+import structureRoutes from './routes/structureRoutes.js';
 
 // Load environment variables
 dotenv.config();
@@ -37,11 +39,13 @@ app.use(express.urlencoded({ extended: true }));
 
 // Application API Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/growers', growerRoutes);
+app.use('/api/animals', animalRoutes);
+app.use('/api/piglets', pigletRoutes);
 app.use('/api/sows', sowRoutes);
 app.use('/api/boars', boarRoutes);
 app.use('/api/breedings', breedingRoutes);
 app.use('/api/farrowings', farrowingRoutes);
+app.use('/api/structure', structureRoutes);
 
 // Root Health & Version Check
 app.get('/api/health', (req, res) => {

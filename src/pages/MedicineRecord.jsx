@@ -3,7 +3,7 @@ import MainLayout from '../components/layout/MainLayout';
 import { useMedicineStore } from '../store/useMedicineStore';
 import { useSowStore } from '../store/useSowStore';
 import { useBoarStore } from '../store/useBoarStore';
-import { useGrowerStore } from '../store/useGrowerStore';
+import { usePigletStore } from '../store/usePigletStore';
 import { useFarrowingStore } from '../store/useFarrowingStore';
 import DataTable from '../components/ui/DataTable';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -18,7 +18,7 @@ export default function MedicineRecord() {
   const { medicines, loading, fetchMedicines, registerMedicine, updateFollowUpStatus, deleteMedicineRecord } = useMedicineStore();
   const { sows, fetchSows } = useSowStore();
   const { boars, fetchBoars } = useBoarStore();
-  const { growers, fetchGrowers } = useGrowerStore();
+  const { piglets, fetchPiglets } = usePigletStore();
   const { farrowings, fetchFarrowings } = useFarrowingStore();
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -43,9 +43,9 @@ export default function MedicineRecord() {
     fetchMedicines();
     fetchSows();
     fetchBoars();
-    fetchGrowers();
+    fetchPiglets();
     fetchFarrowings();
-  }, [fetchMedicines, fetchSows, fetchBoars, fetchGrowers, fetchFarrowings]);
+  }, [fetchMedicines, fetchSows, fetchBoars, fetchPiglets, fetchFarrowings]);
 
   // Aggregate all registered animals from Sow, Boar, Grower, and active Piglet stores
   const allAnimals = useMemo(() => {
@@ -74,14 +74,14 @@ export default function MedicineRecord() {
         sex: 'Male'
       });
     });
-    growers.forEach(g => {
+    piglets.forEach(g => {
       list.push({
         _id: g._id,
         animalNo: g.animalNo,
-        animalType: 'Grower',
+        animalType: 'Piglet',
         breed: g.breed || 'Crossbred',
         status: g.status || 'Active',
-        penNo: g.penNo || 'Grower Pen 2',
+        penNo: g.penNo || 'Piglet Pen 2',
         age: g.dob ? `${Math.floor((new Date() - new Date(g.dob)) / (1000 * 60 * 60 * 24 * 30.4))} months` : '3 months',
         sex: g.sex || 'Male'
       });
@@ -108,7 +108,7 @@ export default function MedicineRecord() {
       });
     });
     return list;
-  }, [sows, boars, growers, farrowings]);
+  }, [sows, boars, piglets, farrowings]);
 
   // Handle animal search list
   const filteredAnimalsForSelect = useMemo(() => {
@@ -365,7 +365,7 @@ export default function MedicineRecord() {
           
           {/* SECTION 1 - SELECT ANIMAL */}
           <FormSection title="Section 1 — Select Registered Animal">
-            <FormField label="Search Animal Registry (Sow, Boar, Grower)" required>
+            <FormField label="Search Animal Registry (Sow, Boar, Piglet)" required>
               <AnimalSelect
                 value={formData.animalId}
                 onChange={(val) => setFormData({ ...formData, animalId: val })}

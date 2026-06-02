@@ -60,16 +60,57 @@ const MOCK_ANIMALS = [
 
 const loadLocalAnimals = () => {
   const stored = localStorage.getItem('pinaka_animals');
+  let list = MOCK_ANIMALS;
   if (stored) {
     try {
-      const parsed = JSON.parse(stored);
-      return parsed.filter(a => !a.isDeleted);
+      list = JSON.parse(stored);
     } catch (e) {
       console.error("Local storage decode failure:", e);
     }
   }
-  localStorage.setItem('pinaka_animals', JSON.stringify(MOCK_ANIMALS));
-  return MOCK_ANIMALS;
+
+  // Migrate and ensure backward compatibility
+  const migrated = list.map(a => {
+    let resolvedStage = a.lifecycleStage;
+    let resolvedType = a.animalType;
+    let resolvedPurpose = a.purpose;
+    let resolvedCastration = a.castrationStatus;
+    let resolvedModule = a.moduleAssignment;
+
+    if (resolvedStage === 'Grower') {
+      resolvedStage = 'Piglet';
+      resolvedType = 'Piglet';
+      resolvedPurpose = resolvedPurpose || 'Fattening';
+      resolvedCastration = resolvedCastration || 'N/A';
+      resolvedModule = 'Piglet';
+    } else {
+      resolvedType = resolvedType || resolvedStage || 'Piglet';
+      resolvedModule = resolvedModule || resolvedType;
+      
+      if (resolvedType === 'Sow') {
+        resolvedPurpose = resolvedPurpose || 'Breeding';
+        resolvedCastration = 'N/A';
+      } else if (resolvedType === 'Boar') {
+        resolvedPurpose = resolvedPurpose || 'Breeding';
+        resolvedCastration = resolvedCastration || 'Not Castrated';
+      } else {
+        resolvedPurpose = resolvedPurpose || 'Pending';
+        resolvedCastration = resolvedCastration || 'N/A';
+      }
+    }
+
+    return {
+      ...a,
+      lifecycleStage: resolvedStage,
+      animalType: resolvedType,
+      purpose: resolvedPurpose,
+      castrationStatus: resolvedCastration,
+      moduleAssignment: resolvedModule
+    };
+  });
+
+  saveLocalAnimals(migrated);
+  return migrated.filter(a => !a.isDeleted);
 };
 
 const saveLocalAnimals = (list) => {
@@ -81,7 +122,7 @@ export const useAnimalStore = create((set, get) => ({
   selectedAnimal: null,
   loading: false,
   error: null,
-
+  
   fetchAnimals: async () => {
     set({ loading: true, error: null });
     try {
@@ -115,10 +156,29 @@ export const useAnimalStore = create((set, get) => ({
         throw new Error("Animal Number already exists in the registry.");
       }
 
+      const resolvedType = data.animalType || data.lifecycleStage || 'Piglet';
+      const finalResolvedType = resolvedType === 'Grower' ? 'Piglet' : resolvedType;
+
+      let finalSex = data.sex || (finalResolvedType === 'Boar' ? 'Male' : 'Female');
+      if (finalResolvedType === 'Sow') {
+        finalSex = 'Female';
+      } else if (finalResolvedType === 'Boar') {
+        finalSex = 'Male';
+      }
+
+      if (finalResolvedType === 'Piglet' && finalSex !== 'Male' && finalSex !== 'Female') {
+        throw new Error('Animal Type "Piglet" must be Male or Female.');
+      }
+
       const newRecord = {
         _id: `ani_${Date.now()}`,
         ...data,
-        lifecycleStage: data.lifecycleStage || 'Piglet',
+        sex: finalSex,
+        lifecycleStage: finalResolvedType,
+        animalType: finalResolvedType,
+        purpose: data.purpose || 'Pending',
+        castrationStatus: data.castrationStatus || 'N/A',
+        moduleAssignment: data.moduleAssignment || finalResolvedType,
         operationalStatus: 'Active',
         currentWeight: Number(data.currentWeight || 0),
         createdAt: new Date().toISOString(),
@@ -127,7 +187,139 @@ export const useAnimalStore = create((set, get) => ({
 
       const updatedList = [newRecord, ...list];
       saveLocalAnimals(updatedList);
-      set({ animals: updatedList, loading: false });
+      set({ animals: updatedList.filter(a => !a.isDeleted), loading: false });
+
+      // ─── AUTO-SYNC to operational module localStorage ───────────────────
+      // So the Sow/Boar/Piglet module sees the animal immediately on next fetch.
+      try {
+        if (finalResolvedType === 'Sow') {
+          const existingSows = JSON.parse(localStorage.getItem('pinaka_sows') || '[]');
+          const alreadyInSows = existingSows.some(s => s.animalNo === newRecord.animalNo);
+          if (!alreadyInSows) {
+            const sowEntry = {
+              _id: `sow_${Date.now()}`,
+              animalNo: newRecord.animalNo,
+              dob: newRecord.dob || 'Unknown',
+              breed: newRecord.breed || 'Unknown',
+              sireNo: newRecord.sireNo || 'UNKNOWN',
+              damNo: newRecord.damNo || 'UNKNOWN',
+              birthWeight: Number(newRecord.currentWeight || 1.5),
+              latestWeight: Number(newRecord.currentWeight || 1.5),
+              penNo: newRecord.currentPen || 'Unassigned',
+              status: 'Active',
+              pregnancyStatus: 'Not Pregnant',
+              parityCount: 0,
+              purpose: newRecord.purpose || 'Breeding',
+              lastHeatDate: '',
+              lastServiceDate: '',
+              expectedFarrowingDate: '',
+              notes: `Synced from Animal Registry on ${new Date().toLocaleDateString()}.`,
+              isDeleted: false,
+              createdAt: new Date().toISOString(),
+              heatHistory: [],
+              breedingHistory: [],
+              farrowingHistory: [],
+              treatmentHistory: [],
+              statusHistory: [{
+                _id: `sh_${Date.now()}`,
+                previousStatus: 'None',
+                newStatus: 'Active',
+                updatedBy: 'System',
+                notes: 'Auto-synced from Animal Registry.',
+                updatedAt: new Date().toISOString()
+              }]
+            };
+            localStorage.setItem('pinaka_sows', JSON.stringify([sowEntry, ...existingSows]));
+          }
+        } else if (finalResolvedType === 'Boar') {
+          const existingBoars = JSON.parse(localStorage.getItem('pinaka_boars') || '[]');
+          const alreadyInBoars = existingBoars.some(b => b.animalNo === newRecord.animalNo);
+          if (!alreadyInBoars) {
+            const boarEntry = {
+              _id: `boar_${Date.now()}`,
+              animalNo: newRecord.animalNo,
+              dob: newRecord.dob || 'Unknown',
+              breed: newRecord.breed || 'Unknown',
+              sireNo: newRecord.sireNo || 'UNKNOWN',
+              damNo: newRecord.damNo || 'UNKNOWN',
+              birthWeight: Number(newRecord.currentWeight || 1.5),
+              latestWeight: Number(newRecord.currentWeight || 1.5),
+              penNo: newRecord.currentPen || 'Unassigned',
+              status: 'Active',
+              purpose: newRecord.purpose || 'Breeding',
+              castrationStatus: newRecord.castrationStatus || 'Not Castrated',
+              source: newRecord.source || 'Direct',
+              breedingStatus: 'Growing',
+              diseaseTestResult: 'Negative',
+              congenitalDefects: 'None',
+              rudimentaryTeats: 0,
+              serviceHistoryRefs: [],
+              fertilityAnalytics: {
+                totalServices: 0, successfulPregnancies: 0, failedServices: 0,
+                pregnancySuccessRate: 0, totalPigletsBorn: 0,
+                averageLitterSize: 0, averagePigletSurvival: 0, averageWeaningCount: 0
+              },
+              healthTests: [],
+              treatmentHistory: [],
+              notes: `Synced from Animal Registry on ${new Date().toLocaleDateString()}.`,
+              isDeleted: false,
+              createdAt: new Date().toISOString(),
+              statusHistory: [{
+                _id: `shb_${Date.now()}`,
+                previousStatus: 'None',
+                newStatus: 'Active',
+                updatedBy: 'System',
+                notes: 'Auto-synced from Animal Registry.',
+                updatedAt: new Date().toISOString()
+              }]
+            };
+            localStorage.setItem('pinaka_boars', JSON.stringify([boarEntry, ...existingBoars]));
+          }
+        } else if (finalResolvedType === 'Piglet') {
+          const existingPiglets = JSON.parse(localStorage.getItem('pinaka_piglets') || '[]');
+          const alreadyInPiglets = existingPiglets.some(p => p.animalNo === newRecord.animalNo);
+          if (!alreadyInPiglets) {
+            const pigletEntry = {
+              _id: `p_${Date.now()}`,
+              animalNo: newRecord.animalNo,
+              dob: newRecord.dob || 'Unknown',
+              sex: newRecord.sex || 'Unknown',
+              breed: newRecord.breed || 'Unknown',
+              sireNo: newRecord.sireNo || 'UNKNOWN',
+              damNo: newRecord.damNo || 'UNKNOWN',
+              birthWeight: Number(newRecord.currentWeight || 1.5),
+              weaningWeight: 0,
+              latestWeight: Number(newRecord.currentWeight || 1.5),
+              penNo: newRecord.currentPen || 'Unassigned',
+              status: 'Active',
+              notes: `Synced from Animal Registry on ${new Date().toLocaleDateString()}.`,
+              isDeleted: false,
+              createdAt: new Date().toISOString(),
+              weightLogs: [{
+                _id: `w_${Date.now()}`,
+                date: new Date().toISOString().split('T')[0],
+                type: 'Birth',
+                weight: Number(newRecord.currentWeight || 1.5),
+                notes: 'Initial weight from Animal Registry.',
+                enteredBy: 'System'
+              }],
+              statusHistory: [{
+                _id: `ps_${Date.now()}`,
+                previousStatus: 'None',
+                newStatus: 'Active',
+                updatedBy: 'System',
+                notes: 'Auto-synced from Animal Registry.',
+                updatedAt: new Date().toISOString()
+              }],
+              promotionHistory: []
+            };
+            localStorage.setItem('pinaka_piglets', JSON.stringify([pigletEntry, ...existingPiglets]));
+          }
+        }
+      } catch (syncErr) {
+        console.warn('Module auto-sync warning:', syncErr);
+      }
+      // ────────────────────────────────────────────────────────────────────
 
       return newRecord;
     } catch (err) {
@@ -142,14 +334,148 @@ export const useAnimalStore = create((set, get) => ({
       const list = loadLocalAnimals();
       const updatedList = list.map(a => {
         if (a._id === id) {
-          return { ...a, ...updateData };
+          const finalAnimalType = updateData.animalType || a.animalType || a.lifecycleStage;
+          const resolvedType = finalAnimalType === 'Grower' ? 'Piglet' : finalAnimalType;
+          
+          let finalSex = updateData.sex !== undefined ? updateData.sex : a.sex;
+          if (resolvedType === 'Sow') {
+            finalSex = 'Female';
+          } else if (resolvedType === 'Boar') {
+            finalSex = 'Male';
+          }
+
+          if (resolvedType === 'Piglet' && finalSex !== 'Male' && finalSex !== 'Female') {
+            throw new Error('Animal Type "Piglet" must be Male or Female.');
+          }
+
+          return { 
+            ...a, 
+            ...updateData,
+            sex: finalSex,
+            currentWeight: updateData.currentWeight !== undefined ? Number(updateData.currentWeight || 0) : Number(a.currentWeight || 0),
+            animalType: resolvedType,
+            lifecycleStage: resolvedType,
+            moduleAssignment: resolvedType
+          };
         }
         return a;
       });
 
       saveLocalAnimals(updatedList);
       const match = updatedList.find(a => a._id === id);
-      set({ animals: updatedList, selectedAnimal: match, loading: false });
+
+      // ─── AUTO-SYNC to operational module localStorage on update ─────────
+      try {
+        if (match) {
+          const finalPurpose = match.purpose || 'Breeding';
+          if (match.animalType === 'Sow') {
+            const existingSows = JSON.parse(localStorage.getItem('pinaka_sows') || '[]');
+            let matchedSow = existingSows.find(s => s.animalNo === match.animalNo);
+            if (matchedSow) {
+              matchedSow.purpose = finalPurpose;
+              if (finalPurpose === 'Fattening') {
+                matchedSow.status = 'Retired';
+              }
+              localStorage.setItem('pinaka_sows', JSON.stringify(existingSows));
+            } else if (finalPurpose === 'Breeding' && match.operationalStatus === 'Active') {
+              // Auto-create missing Sow operational card
+              const sowEntry = {
+                _id: `sow_${Date.now()}`,
+                animalNo: match.animalNo,
+                dob: match.dob || 'Unknown',
+                breed: match.breed || 'Unknown',
+                sireNo: match.sireNo || 'UNKNOWN',
+                damNo: match.damNo || 'UNKNOWN',
+                birthWeight: Number(match.currentWeight || 1.5),
+                latestWeight: Number(match.currentWeight || 1.5),
+                penNo: match.currentPen || 'Unassigned',
+                status: 'Active',
+                pregnancyStatus: 'Not Pregnant',
+                parityCount: 0,
+                purpose: 'Breeding',
+                lastHeatDate: '',
+                lastServiceDate: '',
+                expectedFarrowingDate: '',
+                notes: `Auto-synced from Animal Registry due to Breeding purpose.`,
+                isDeleted: false,
+                createdAt: new Date().toISOString(),
+                heatHistory: [],
+                breedingHistory: [],
+                farrowingHistory: [],
+                treatmentHistory: [],
+                statusHistory: [{
+                  _id: `sh_${Date.now()}`,
+                  previousStatus: 'None',
+                  newStatus: 'Active',
+                  updatedBy: 'System',
+                  notes: 'Auto-synced from Animal Registry update.',
+                  updatedAt: new Date().toISOString()
+                }]
+              };
+              localStorage.setItem('pinaka_sows', JSON.stringify([sowEntry, ...existingSows]));
+            }
+          } else if (match.animalType === 'Boar') {
+            const existingBoars = JSON.parse(localStorage.getItem('pinaka_boars') || '[]');
+            let matchedBoar = existingBoars.find(b => b.animalNo === match.animalNo);
+            if (matchedBoar) {
+              matchedBoar.purpose = finalPurpose;
+              if (finalPurpose === 'Fattening') {
+                matchedBoar.breedingStatus = 'Retired';
+              }
+              localStorage.setItem('pinaka_boars', JSON.stringify(existingBoars));
+            } else if (finalPurpose === 'Breeding' && match.operationalStatus === 'Active') {
+              // Auto-create missing Boar operational card
+              const boarEntry = {
+                _id: `boar_${Date.now()}`,
+                animalNo: match.animalNo,
+                dob: match.dob || 'Unknown',
+                breed: match.breed || 'Unknown',
+                sireNo: match.sireNo || 'UNKNOWN',
+                damNo: match.damNo || 'UNKNOWN',
+                birthWeight: Number(match.currentWeight || 1.5),
+                latestWeight: Number(match.currentWeight || 1.5),
+                penNo: match.currentPen || 'Unassigned',
+                status: 'Active',
+                purpose: 'Breeding',
+                castrationStatus: match.castrationStatus || 'Not Castrated',
+                source: match.source || 'Direct',
+                breedingStatus: 'Growing',
+                diseaseTestResult: 'Negative',
+                congenitalDefects: 'None',
+                rudimentaryTeats: 0,
+                serviceHistoryRefs: [],
+                fertilityAnalytics: {
+                  totalServices: 0, successfulPregnancies: 0, failedServices: 0,
+                  pregnancySuccessRate: 0, totalPigletsBorn: 0,
+                  averageLitterSize: 0, averagePigletSurvival: 0, averageWeaningCount: 0
+                },
+                healthTests: [],
+                treatmentHistory: [],
+                notes: `Auto-synced from Animal Registry due to Breeding purpose.`,
+                isDeleted: false,
+                createdAt: new Date().toISOString(),
+                statusHistory: [{
+                  _id: `shb_${Date.now()}`,
+                  previousStatus: 'None',
+                  newStatus: 'Active',
+                  updatedBy: 'System',
+                  notes: 'Auto-synced from Animal Registry update.',
+                  updatedAt: new Date().toISOString()
+                }]
+              };
+              localStorage.setItem('pinaka_boars', JSON.stringify([boarEntry, ...existingBoars]));
+            }
+          }
+        }
+      } catch (syncErr) {
+        console.warn('Operational update sync failed:', syncErr);
+      }
+
+      set({ 
+        animals: updatedList.filter(a => !a.isDeleted), 
+        selectedAnimal: match, 
+        loading: false 
+      });
       return match;
     } catch (err) {
       set({ error: err.message, loading: false });

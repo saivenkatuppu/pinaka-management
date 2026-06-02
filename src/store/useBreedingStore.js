@@ -124,10 +124,10 @@ export const useBreedingStore = create((set, get) => ({
       
       // Calculations
       // Pregnancy Check Date = Service Date + Pregnancy Confirmation Period
-      const pregCheckDate = useSettingsStore.getState().calculateDate(serviceDateStr, 'pregnancyConfirmation').split('T')[0];
+      const pregCheckDate = useSettingsStore.getState().calculateDate(serviceDateStr, 'pregnancyConfirmationPeriod').split('T')[0];
       
       // Expected Farrowing Date = Service Date + Gestation
-      const estFarrowingDate = useSettingsStore.getState().calculateDate(serviceDateStr, 'gestation').split('T')[0];
+      const estFarrowingDate = useSettingsStore.getState().calculateDate(serviceDateStr, 'gestationDuration').split('T')[0];
 
       const newRecord = {
         _id: `br_${Date.now()}`,

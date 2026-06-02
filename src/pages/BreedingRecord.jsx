@@ -36,6 +36,7 @@ export default function BreedingRecord() {
   const { sows, fetchSows } = useSowStore();
   const { boars, fetchBoars } = useBoarStore();
 
+  const [activeTab, setActiveTab] = useState('Records'); // 'Records', 'Sows', 'Boars'
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [formError, setFormError] = useState('');
 
@@ -57,6 +58,57 @@ export default function BreedingRecord() {
     fetchBoars();
   }, [fetchBreedings, fetchSows, fetchBoars]);
 
+  // Eligible animals for form
+  const eligibleSows = useMemo(() => {
+    return sows.filter(s => 
+      (s.purpose || 'Breeding') === 'Breeding' &&
+      (s.status === 'In Heat' || s.status === 'Heat' || s.status === 'Active') && 
+      s.pregnancyStatus !== 'Pregnant'
+    );
+  }, [sows]);
+
+  const eligibleBoars = useMemo(() => {
+    return boars.filter(b => 
+      (b.purpose || 'Breeding') === 'Breeding' &&
+      (b.breedingStatus === 'Breeding Ready' || 
+       b.breedingStatus === 'Breeding Active' || 
+       b.breedingStatus === 'Mating' || 
+       b.status === 'Mating' || 
+       b.status === 'Active')
+    );
+  }, [boars]);
+
+  // Compute all active sows for boar-initiated breeding
+  const activeSows = useMemo(() => {
+    return sows.filter(s => 
+      (s.purpose || 'Breeding') === 'Breeding' &&
+      s.status !== 'Dead' && 
+      s.status !== 'Culled' && 
+      s.status !== 'Sold' && 
+      s.pregnancyStatus !== 'Pregnant'
+    );
+  }, [sows]);
+
+  // Active breeding sows list only (no fattening / dead / culled / sold)
+  const breedingSowsOnly = useMemo(() => {
+    return sows.filter(s => 
+      (s.purpose || 'Breeding') === 'Breeding' && 
+      s.status !== 'Dead' && 
+      s.status !== 'Culled' && 
+      s.status !== 'Sold'
+    );
+  }, [sows]);
+
+  // Active breeding boars list only (no fattening / dead / culled / sold)
+  const breedingBoarsOnly = useMemo(() => {
+    return boars.filter(b => 
+      (b.purpose || 'Breeding') === 'Breeding' && 
+      b.status !== 'Dead' && 
+      b.status !== 'Culled' && 
+      b.status !== 'Sold'
+    );
+  }, [boars]);
+
   // Auto-open modal if navigated from Boar Record with a preselected boar
   useEffect(() => {
     if (locationState.openMating && locationState.preselectedBoarId && boars.length > 0 && sows.length > 0) {
@@ -76,26 +128,6 @@ export default function BreedingRecord() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationState.openMating, boars.length, sows.length]);
-
-  // Eligible animals for form
-  const eligibleSows = useMemo(() => {
-    return sows.filter(s => (s.status === 'In Heat' || s.status === 'Heat') && s.pregnancyStatus !== 'Pregnant');
-  }, [sows]);
-
-  const eligibleBoars = useMemo(() => {
-    return boars.filter(b => 
-      b.breedingStatus === 'Breeding Ready' || 
-      b.breedingStatus === 'Breeding Active' || 
-      b.breedingStatus === 'Mating' || 
-      b.status === 'Mating' || 
-      b.status === 'Active'
-    );
-  }, [boars]);
-
-  // Compute all active sows for boar-initiated breeding
-  const activeSows = useMemo(() => {
-    return sows.filter(s => s.status !== 'Dead' && s.status !== 'Culled' && s.status !== 'Sold' && s.pregnancyStatus !== 'Pregnant');
-  }, [sows]);
 
   // Whether the modal was opened from a boar (pre-filled boar scenario)
   const isBoarInitiated = !!(locationState.preselectedBoarId);
@@ -140,6 +172,32 @@ export default function BreedingRecord() {
       matingType: 'Natural Mating',
       operator: user?.name || '',
       notes: ''
+    });
+    setIsAddOpen(true);
+  };
+
+  const handleOpenAddForSow = (sow) => {
+    setFormError('');
+    setFormData({
+      sowId: sow._id,
+      boarId: eligibleBoars.length > 0 ? eligibleBoars[0]._id : '',
+      serviceDate: new Date().toISOString().split('T')[0],
+      matingType: 'Natural Mating',
+      operator: user?.name || '',
+      notes: `Initiated directly from Sow ${sow.animalNo} breeding card.`
+    });
+    setIsAddOpen(true);
+  };
+
+  const handleOpenAddForBoar = (boar) => {
+    setFormError('');
+    setFormData({
+      sowId: eligibleSows.length > 0 ? eligibleSows[0]._id : '',
+      boarId: boar._id,
+      serviceDate: new Date().toISOString().split('T')[0],
+      matingType: 'Natural Mating',
+      operator: user?.name || '',
+      notes: `Initiated directly from Boar ${boar.animalNo} breeding card.`
     });
     setIsAddOpen(true);
   };
@@ -276,6 +334,153 @@ export default function BreedingRecord() {
     }
   ];
 
+  const sowColumns = [
+    { 
+      header: "Sow No", 
+      accessor: "animalNo", 
+      sortable: true,
+      render: (val, row) => (
+        <span 
+          className="font-extrabold text-primary select-all cursor-pointer hover:underline font-mono" 
+          onClick={() => navigate(`/sows/${row._id}`)}
+        >
+          {val}
+        </span>
+      )
+    },
+    { header: "Breed", accessor: "breed", sortable: true },
+    { header: "Pen Location", accessor: "penNo", sortable: true },
+    { 
+      header: "Reproductive Status", 
+      accessor: "status", 
+      sortable: true,
+      render: (val) => <StatusBadge status={val} />
+    },
+    { 
+      header: "Pregnancy Check", 
+      accessor: "pregnancyStatus", 
+      sortable: true,
+      render: (val) => (
+        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+          val === 'Pregnant' ? 'bg-success/10 text-success border border-success/20' : 
+          val === 'Pending Confirmation' ? 'bg-info/10 text-info border border-info/20' : 'bg-sidebar border border-borderDark text-textSecondary'
+        }`}>
+          {val}
+        </span>
+      )
+    },
+    { 
+      header: "Parity Count", 
+      accessor: "parityCount", 
+      sortable: true,
+      render: (val) => <span className="font-bold">{val} Farrows</span>
+    },
+    { 
+      header: "Last Heat Date", 
+      accessor: "lastHeatDate", 
+      sortable: true,
+      render: (val) => val ? new Date(val).toLocaleDateString() : <span className="text-textSecondary/45">None</span>
+    },
+    {
+      header: "Actions",
+      accessor: "_id",
+      sortable: false,
+      render: (val, row) => (
+        <div className="flex items-center gap-2 no-print">
+          <button 
+            onClick={() => navigate(`/sows/${row._id}`)}
+            className="p-1 hover:bg-cardBg hover:text-primary rounded text-textSecondary"
+            title="View Sow Card"
+          >
+            <Eye className="w-3.5 h-3.5" />
+          </button>
+          {canEdit && row.pregnancyStatus !== 'Pregnant' && (
+            <button 
+              onClick={() => handleOpenAddForSow(row)}
+              className="px-2.5 py-1 bg-primary/10 border border-primary/20 hover:bg-primary hover:text-black rounded text-primary text-[10px] font-black uppercase tracking-wider transition-all"
+              title="Record a new service mating event"
+            >
+              Mating
+            </button>
+          )}
+        </div>
+      )
+    }
+  ];
+
+  const boarColumns = [
+    { 
+      header: "Boar No", 
+      accessor: "animalNo", 
+      sortable: true,
+      render: (val, row) => (
+        <span 
+          className="font-extrabold text-primary select-all cursor-pointer hover:underline font-mono" 
+          onClick={() => navigate(`/boars/${row._id}`)}
+        >
+          {val}
+        </span>
+      )
+    },
+    { header: "Breed", accessor: "breed", sortable: true },
+    { header: "Pen Location", accessor: "penNo", sortable: true },
+    { 
+      header: "Boar Status", 
+      accessor: "status", 
+      sortable: true,
+      render: (val) => <StatusBadge status={val} />
+    },
+    { 
+      header: "Breeding Stage", 
+      accessor: "breedingStatus", 
+      sortable: true,
+      render: (val) => <StatusBadge status={val} />
+    },
+    { 
+      header: "Pregnancy Success Rate", 
+      accessor: "fertilityAnalytics.pregnancySuccessRate", 
+      sortable: true,
+      render: (val, row) => (
+        <span className="font-bold text-success">
+          {row.fertilityAnalytics?.pregnancySuccessRate || 0}%
+        </span>
+      )
+    },
+    { 
+      header: "Total Services", 
+      accessor: "fertilityAnalytics.totalServices", 
+      sortable: true,
+      render: (val, row) => (
+        <span>{row.fertilityAnalytics?.totalServices || 0} matings</span>
+      )
+    },
+    {
+      header: "Actions",
+      accessor: "_id",
+      sortable: false,
+      render: (val, row) => (
+        <div className="flex items-center gap-2 no-print">
+          <button 
+            onClick={() => navigate(`/boars/${row._id}`)}
+            className="p-1 hover:bg-cardBg hover:text-primary rounded text-textSecondary"
+            title="View Boar Card"
+          >
+            <Eye className="w-3.5 h-3.5" />
+          </button>
+          {canEdit && (
+            <button 
+              onClick={() => handleOpenAddForBoar(row)}
+              className="px-2.5 py-1 bg-primary/10 border border-primary/20 hover:bg-primary hover:text-black rounded text-primary text-[10px] font-black uppercase tracking-wider transition-all"
+              title="Record a new service mating event"
+            >
+              Mating
+            </button>
+          )}
+        </div>
+      )
+    }
+  ];
+
   return (
     <MainLayout>
       <div className="flex flex-col gap-5 w-full">
@@ -360,15 +565,56 @@ export default function BreedingRecord() {
           </div>
         )}
 
+        {/* View Tabs */}
+        <div className="flex justify-between items-center mt-2 mb-1 no-print">
+          <div className="flex bg-sidebar border border-borderDark rounded-lg p-0.5 select-none">
+            {[
+              { id: 'Records', label: 'Breeding Records' },
+              { id: 'Sows', label: 'Breeding Sows' },
+              { id: 'Boars', label: 'Breeding Boars' }
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded transition-all ${
+                  activeTab === tab.id 
+                    ? 'bg-primary text-black font-extrabold shadow-sm' 
+                    : 'text-textSecondary hover:text-textPrimary hover:bg-cardBg/10'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Database List Table */}
         {loading ? (
           <TableSkeleton rows={7} cols={9} />
         ) : (
-          <DataTable 
-            columns={columns} 
-            data={breedings} 
-            searchPlaceholder="Search by Sow No, Boar No, ID..."
-          />
+          <>
+            {activeTab === 'Records' && (
+              <DataTable 
+                columns={columns} 
+                data={breedings} 
+                searchPlaceholder="Search by Sow No, Boar No, ID..."
+              />
+            )}
+            {activeTab === 'Sows' && (
+              <DataTable 
+                columns={sowColumns} 
+                data={breedingSowsOnly} 
+                searchPlaceholder="Search by Sow No, Breed, Pen..."
+              />
+            )}
+            {activeTab === 'Boars' && (
+              <DataTable 
+                columns={boarColumns} 
+                data={breedingBoarsOnly} 
+                searchPlaceholder="Search by Boar No, Breed, Pen..."
+              />
+            )}
+          </>
         )}
 
         {/* ==============================================

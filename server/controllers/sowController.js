@@ -1,103 +1,86 @@
 import Sow from '../models/Sow.js';
-import Grower from '../models/Grower.js';
+import Piglet from '../models/Piglet.js';
+import Animal from '../models/Animal.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import ApiResponse from '../utils/apiResponse.js';
 import CustomError from '../utils/customError.js';
 
-// @desc    Register a new Sow manually
-// @route   POST /api/sows
+// @desc    Import/Promote Female Piglet to Sow
+// @route   POST /api/sows/import-piglet
 // @access  Private
-export const createSow = asyncHandler(async (req, res, next) => {
-  const { animalNo, dob, breed, sireNo, damNo, birthWeight, latestWeight, penNo, notes, parityCount, status, pregnancyStatus, lastHeatDate, expectedFarrowingDate } = req.body;
+export const importFromPiglet = asyncHandler(async (req, res, next) => {
+  const { pigletId, purpose, notes } = req.body;
 
-  const exists = await Sow.findOne({ animalNo: animalNo.toUpperCase().trim() });
+  const piglet = await Piglet.findById(pigletId);
+  if (!piglet) {
+    return next(new CustomError('Piglet record not found.', 404));
+  }
+
+  if (piglet.sex !== 'Female') {
+    return next(new CustomError('Only female piglets can be promoted to Sow.', 400));
+  }
+
+  const exists = await Sow.findOne({ animalNo: piglet.animalNo });
   if (exists) {
-    return next(new CustomError(`Animal tag '${animalNo}' already registered in Sow database.`, 400));
-  }
-
-  const sow = new Sow({
-    animalNo: animalNo.toUpperCase().trim(),
-    dob,
-    breed,
-    sireNo: sireNo || 'UNKNOWN',
-    damNo: damNo || 'UNKNOWN',
-    birthWeight: Number(birthWeight || 1.5),
-    latestWeight: Number(latestWeight || birthWeight || 1.5),
-    penNo,
-    notes: notes || '',
-    status: status || 'Active',
-    pregnancyStatus: pregnancyStatus || 'Not Pregnant',
-    parityCount: Number(parityCount || 0),
-    lastHeatDate,
-    expectedFarrowingDate,
-    createdBy: req.user?._id
-  });
-
-  await sow.save();
-
-  res.status(201).json(ApiResponse.success(sow, 'Sow registered successfully.'));
-});
-
-// @desc    Import/Promote Female Grower to Sow
-// @route   POST /api/sows/import-grower
-// @access  Private
-export const importFromGrower = asyncHandler(async (req, res, next) => {
-  const { growerId, notes } = req.body;
-
-  const grower = await Grower.findById(growerId);
-  if (!grower) {
-    return next(new CustomError('Grower record not found.', 404));
-  }
-
-  if (grower.sex !== 'Female') {
-    return next(new CustomError('Only female growers can be promoted to Sow.', 400));
-  }
-
-  const exists = await Sow.findOne({ animalNo: grower.animalNo });
-  if (exists) {
-    return next(new CustomError(`Grower '${grower.animalNo}' is already registered in the Sow records.`, 400));
+    return next(new CustomError(`Piglet '${piglet.animalNo}' is already registered in the Sow records.`, 400));
   }
 
   // Create Sow Record
   const sow = new Sow({
-    animalNo: grower.animalNo,
-    dob: grower.dob,
-    breed: grower.breed,
-    sireNo: grower.sireNo || 'UNKNOWN',
-    damNo: grower.damNo || 'UNKNOWN',
-    birthWeight: grower.birthWeight,
-    latestWeight: grower.latestWeight || grower.birthWeight,
-    penNo: grower.penNo,
+    animalNo: piglet.animalNo,
+    dob: piglet.dob,
+    breed: piglet.breed,
+    sireNo: piglet.sireNo || 'UNKNOWN',
+    damNo: piglet.damNo || 'UNKNOWN',
+    birthWeight: piglet.birthWeight,
+    latestWeight: piglet.latestWeight || piglet.birthWeight,
+    penNo: piglet.penNo,
     status: 'Active',
     pregnancyStatus: 'Not Pregnant',
     parityCount: 0,
-    notes: notes || grower.notes || 'Imported and promoted from Grower Module.',
+    purpose: purpose || 'Breeding',
+    pigletRef: piglet._id,
+    notes: notes || piglet.notes || 'Imported and promoted from Piglet Module.',
     createdBy: req.user?._id
   });
 
   await sow.save();
 
-  // Update Grower Status
-  const previousStatus = grower.status;
-  grower.status = 'Promoted to Sow';
-  grower.statusHistory.push({
+  // Update Piglet Status
+  const previousStatus = piglet.status;
+  piglet.promotedTo = 'Sow';
+  piglet.promotedAt = new Date();
+  piglet.sowId = sow._id;
+  
+  piglet.statusHistory.push({
     previousStatus,
-    newStatus: 'Promoted to Sow',
+    newStatus: 'Pending Profile Completion',
     updatedBy: req.user?.name || 'System',
-    notes: 'Promoted and moved to Sow breeding records.',
+    notes: 'Promoted to Sow operational records.',
     updatedAt: new Date()
   });
 
-  grower.promotionHistory.push({
+  piglet.promotionHistory.push({
     type: 'Sow',
     promotedAt: new Date(),
     promotedBy: req.user?.name || 'System',
-    destinationModule: 'Sow Breeding'
+    destinationModule: purpose === 'Fattening' ? 'Sow Fattening' : 'Sow Breeding'
   });
 
-  await grower.save();
+  await piglet.save();
 
-  res.status(201).json(ApiResponse.success({ sow, grower }, 'Female grower successfully promoted and imported to Sows.'));
+  // Sync with Master Animal Record
+  const masterAnimal = await Animal.findOne({ animalNo: piglet.animalNo });
+  if (masterAnimal) {
+    masterAnimal.animalType = 'Sow';
+    masterAnimal.lifecycleStage = 'Sow';
+    masterAnimal.moduleAssignment = 'Sow';
+    masterAnimal.sowRef = sow._id;
+    masterAnimal.purpose = purpose || 'Breeding';
+    await masterAnimal.save();
+  }
+
+  res.status(201).json(ApiResponse.success({ sow, piglet }, 'Female piglet successfully promoted and imported to Sows.'));
 });
 
 // @desc    Get all Sows with optional queries
@@ -105,6 +88,42 @@ export const importFromGrower = asyncHandler(async (req, res, next) => {
 // @access  Private
 export const getSows = asyncHandler(async (req, res, next) => {
   const { search, status, breed, penNo, pregnancyStatus } = req.query;
+  
+  // ─── AUTO-SYNC missing Sows from Animal Registry ───
+  try {
+    const activeBreedingAnimalSows = await Animal.find({
+      animalType: 'Sow',
+      purpose: 'Breeding',
+      operationalStatus: 'Active',
+      isDeleted: false
+    });
+
+    for (const animal of activeBreedingAnimalSows) {
+      const existingSow = await Sow.findOne({ animalNo: animal.animalNo });
+      if (!existingSow) {
+        const sow = await Sow.create({
+          animalNo: animal.animalNo,
+          dob: animal.dob,
+          breed: animal.breed,
+          sireNo: animal.sireNo || 'UNKNOWN',
+          damNo: animal.damNo || 'UNKNOWN',
+          birthWeight: animal.currentWeight || 1.5,
+          latestWeight: animal.currentWeight || 1.5,
+          penNo: animal.currentPen || 'Unassigned',
+          status: 'Active',
+          pregnancyStatus: 'Not Pregnant',
+          purpose: 'Breeding',
+          notes: 'Auto-created and synced from Animal Registry.',
+          createdBy: req.user?._id
+        });
+        animal.sowRef = sow._id;
+        await animal.save();
+      }
+    }
+  } catch (syncErr) {
+    console.error('Sow getSows background auto-sync failed:', syncErr);
+  }
+
   const query = { isDeleted: false };
 
   if (status) query.status = status;
@@ -125,13 +144,56 @@ export const getSows = asyncHandler(async (req, res, next) => {
   res.status(200).json(ApiResponse.success(Sows, 'Sow records retrieved successfully.'));
 });
 
-// @desc    Get Sow by ID
-// @route   GET /api/sows/:id
-// @access  Private
 export const getSowById = asyncHandler(async (req, res, next) => {
-  const sow = await Sow.findById(req.params.id);
-  if (!sow || sow.isDeleted) {
-    return next(new CustomError('Sow record not found.', 404));
+  let sow = null;
+  const isObjectId = typeof req.params.id === 'string' && req.params.id.match(/^[0-9a-fA-F]{24}$/);
+
+  if (isObjectId) {
+    sow = await Sow.findOne({ $or: [{ _id: req.params.id }, { animalNo: req.params.id }], isDeleted: false });
+  } else {
+    sow = await Sow.findOne({ animalNo: req.params.id, isDeleted: false });
+  }
+
+  if (!sow) {
+    const animalQuery = isObjectId 
+      ? { $or: [{ _id: req.params.id }, { animalNo: req.params.id }], isDeleted: false }
+      : { animalNo: req.params.id, isDeleted: false };
+      
+    const animal = await Animal.findOne(animalQuery);
+    if (animal && animal.animalType === 'Sow' && animal.purpose === 'Breeding') {
+      sow = await Sow.create({
+        animalNo: animal.animalNo,
+        dob: animal.dob,
+        breed: animal.breed,
+        sireNo: animal.sireNo || 'UNKNOWN',
+        damNo: animal.damNo || 'UNKNOWN',
+        birthWeight: animal.currentWeight || 1.5,
+        latestWeight: animal.currentWeight || 1.5,
+        penNo: animal.currentPen || 'Unassigned',
+        status: 'Active',
+        pregnancyStatus: 'Not Pregnant',
+        purpose: 'Breeding',
+        createdAt: new Date(),
+        isDeleted: false,
+        heatHistory: [],
+        breedingHistory: [],
+        farrowingHistory: [],
+        treatmentHistory: [],
+        statusHistory: [
+          {
+            previousStatus: 'None',
+            newStatus: 'Active',
+            updatedBy: 'System',
+            notes: 'Auto-created and synced from dynamic fetch due to Breeding purpose.',
+            updatedAt: new Date()
+          }
+        ]
+      });
+      animal.sowRef = sow._id;
+      await animal.save();
+    } else {
+      return next(new CustomError('Sow record not found.', 404));
+    }
   }
 
   res.status(200).json(ApiResponse.success(sow, 'Sow details retrieved successfully.'));
@@ -440,4 +502,80 @@ export const getHeatAlerts = asyncHandler(async (req, res, next) => {
   });
 
   res.status(200).json(ApiResponse.success(alerts, 'Heat alerts generated.'));
+});
+
+// @desc    Move Sow to Fattening
+// @route   POST /api/sows/:id/move-to-fattening
+// @access  Private
+export const moveToFattening = asyncHandler(async (req, res, next) => {
+  const { reason } = req.body;
+  const sow = await Sow.findById(req.params.id);
+
+  if (!sow || sow.isDeleted) {
+    return next(new CustomError('Sow record not found.', 404));
+  }
+
+  sow.purpose = 'Fattening';
+  if (reason) {
+    sow.notes = sow.notes ? `${sow.notes}\nMoved to Fattening. Reason: ${reason}` : `Moved to Fattening. Reason: ${reason}`;
+  }
+  await sow.save();
+
+  // Sync with Master Animal Record
+  const masterAnimal = await Animal.findOne({ animalNo: sow.animalNo });
+  if (masterAnimal) {
+    masterAnimal.purpose = 'Fattening';
+    await masterAnimal.save();
+  }
+
+  res.status(200).json(ApiResponse.success(sow, 'Sow successfully retired and moved to Fattening.'));
+});
+
+// @desc    Activate external animal as Sow
+// @route   POST /api/sows/activate-animal
+// @access  Private
+export const activateSow = asyncHandler(async (req, res, next) => {
+  const { animalNo, purpose, notes } = req.body;
+
+  const masterAnimal = await Animal.findOne({ animalNo });
+  if (!masterAnimal || masterAnimal.isDeleted) {
+    return next(new CustomError('Master Animal record not found.', 404));
+  }
+
+  if (masterAnimal.sex !== 'Female') {
+    return next(new CustomError('Only female animals can be activated as a Sow.', 400));
+  }
+
+  const exists = await Sow.findOne({ animalNo });
+  if (exists) {
+    return next(new CustomError(`Sow record already exists for animalNo ${animalNo}`, 400));
+  }
+
+  // Create Sow Record using Master Animal details
+  const sow = new Sow({
+    animalNo: masterAnimal.animalNo,
+    dob: masterAnimal.dob,
+    breed: masterAnimal.breed,
+    sireNo: masterAnimal.sireNo || 'UNKNOWN',
+    damNo: masterAnimal.damNo || 'UNKNOWN',
+    birthWeight: masterAnimal.currentWeight || 1.5,
+    latestWeight: masterAnimal.currentWeight || 1.5,
+    penNo: masterAnimal.currentPen || 'Unassigned',
+    status: 'Active',
+    pregnancyStatus: 'Not Pregnant',
+    purpose: purpose || 'Breeding',
+    notes: notes || 'Activated operationally in Sow module.',
+    createdBy: req.user?._id
+  });
+
+  await sow.save();
+
+  masterAnimal.animalType = 'Sow';
+  masterAnimal.lifecycleStage = 'Sow';
+  masterAnimal.moduleAssignment = 'Sow';
+  masterAnimal.sowRef = sow._id;
+  masterAnimal.purpose = purpose || 'Breeding';
+  await masterAnimal.save();
+
+  res.status(201).json(ApiResponse.success(sow, 'Animal successfully activated in Sow module.'));
 });

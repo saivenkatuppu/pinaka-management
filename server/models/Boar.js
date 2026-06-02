@@ -47,9 +47,9 @@ const StatusHistorySchema = new mongoose.Schema({
 });
 
 const PromotionHistorySchema = new mongoose.Schema({
-  growerId: {
+  pigletRef: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Grower'
+    ref: 'Piglet'
   },
   animalNo: {
     type: String
@@ -106,7 +106,7 @@ const BoarSchema = new mongoose.Schema({
     uppercase: true
   },
   dob: {
-    type: Date,
+    type: mongoose.Schema.Types.Mixed,
     required: [true, 'Date of Birth is required']
   },
   breed: {
@@ -151,9 +151,19 @@ const BoarSchema = new mongoose.Schema({
     type: String,
     default: 'Direct'
   },
-  growerId: {
+  purpose: {
+    type: String,
+    enum: ['Breeding', 'Fattening'],
+    default: 'Breeding'
+  },
+  castrationStatus: {
+    type: String,
+    enum: ['Castrated', 'Not Castrated'],
+    default: 'Not Castrated'
+  },
+  pigletRef: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Grower'
+    ref: 'Piglet'
   },
   isDeleted: {
     type: Boolean,

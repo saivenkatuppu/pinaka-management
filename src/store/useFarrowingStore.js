@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { useSowStore } from './useSowStore';
-import { useGrowerStore } from './useGrowerStore';
+import { usePigletStore } from './usePigletStore';
 import { useAnimalStore } from './useAnimalStore';
 import { useSettingsStore } from './useSettingsStore';
 
@@ -8,8 +8,8 @@ import { useSettingsStore } from './useSettingsStore';
 
 /**
  * Scans all farrowings in localStorage and the master animal registry to
- * find the highest existing PIG-XXXX sequential number, then returns the
- * next number padded to 4 digits.
+ * find the highest existing P-XXX sequential number, then returns the
+ * next number.
  */
 const getNextPigletId = () => {
   let maxNum = 0;
@@ -19,9 +19,9 @@ const getNextPigletId = () => {
     const farrowings = JSON.parse(localStorage.getItem('pinaka_farrowings') || '[]');
     farrowings.forEach(f => {
       (f.piglets || []).forEach(p => {
-        const match = (p.pigletId || '').match(/^PIG-(\d+)$/i);
+        const match = (p.pigletId || '').match(/^(P|PIG)-(\d+)$/i);
         if (match) {
-          const num = parseInt(match[1], 10);
+          const num = parseInt(match[2], 10);
           if (num > maxNum) maxNum = num;
         }
       });
@@ -32,9 +32,9 @@ const getNextPigletId = () => {
   try {
     const animals = JSON.parse(localStorage.getItem('pinaka_animals') || '[]');
     animals.forEach(a => {
-      const match = (a.animalNo || '').match(/^PIG-(\d+)$/i);
+      const match = (a.animalNo || '').match(/^(P|PIG)-(\d+)$/i);
       if (match) {
-        const num = parseInt(match[1], 10);
+        const num = parseInt(match[2], 10);
         if (num > maxNum) maxNum = num;
       }
     });
@@ -43,7 +43,7 @@ const getNextPigletId = () => {
   return maxNum + 1;
 };
 
-const formatPigletId = (num) => `PIG-${String(num).padStart(4, '0')}`;
+const formatPigletId = (num) => `P-${String(num).padStart(3, '0')}`;
 
 // ─── Mock seed data ──────────────────────────────────────────────────────────
 
@@ -287,7 +287,7 @@ export const useFarrowingStore = create((set, get) => ({
       const list = loadLocalFarrowings();
 
       const aDate = new Date(data.actualFarrowingDate || Date.now());
-      const eWeanStr = useSettingsStore.getState().calculateDate(aDate.toISOString(), 'weaning');
+      const eWeanStr = useSettingsStore.getState().calculateDate(aDate.toISOString(), 'weaningAge');
       const eWean = new Date(eWeanStr);
       const alive = Number(data.pigletsBornAlive || 0);
       const still = Number(data.stillbornPiglets || 0);
@@ -303,8 +303,10 @@ export const useFarrowingStore = create((set, get) => ({
 
       // Sequential piglet IDs starting from the next available number
       const pigletsArray = [];
+      const pigletsList = JSON.parse(localStorage.getItem('pinaka_piglets') || '[]');
       let nextNum = getNextPigletId();
       const animalStore = useAnimalStore.getState();
+      const newFarrowingId = `far_${Date.now()}`;
 
       for (let i = 0; i < alive; i++) {
         const pigletId = formatPigletId(nextNum + i);
@@ -324,6 +326,48 @@ export const useFarrowingStore = create((set, get) => ({
           notes: ''
         };
         pigletsArray.push(piglet);
+
+        // Register in pinaka_piglets
+        const newPigletObj = {
+          _id: `p_${Date.now()}_${i}`,
+          animalNo: pigletId,
+          dob: aDate.toISOString().split('T')[0],
+          sex,
+          breed: sowBreed,
+          sireNo: data.boarNo || "UNKNOWN",
+          damNo: data.sowNo || "UNKNOWN",
+          birthWeight: 1.5,
+          weaningWeight: 0,
+          penNo: 'Farrowing Unit',
+          status: 'Lactating',
+          latestWeight: 1.5,
+          notes: `Born in farrowing litter to Sow ${data.sowNo}`,
+          farrowingId: newFarrowingId,
+          isDeleted: false,
+          createdAt: new Date().toISOString(),
+          weightLogs: [
+            {
+              _id: `w_${Date.now()}_${i}`,
+              date: aDate.toISOString().split('T')[0],
+              type: "Birth",
+              weight: 1.5,
+              notes: "Initial registered birth weight",
+              enteredBy: data.operator || "System"
+            }
+          ],
+          statusHistory: [
+            {
+              _id: `s_${Date.now()}_${i}`,
+              previousStatus: "None",
+              newStatus: "Lactating",
+              updatedBy: data.operator || "System",
+              notes: "Born in farrowing litter",
+              updatedAt: new Date().toISOString()
+            }
+          ],
+          promotionHistory: []
+        };
+        pigletsList.unshift(newPigletObj);
 
         // Register piglet in master animal registry (non-blocking; skip if duplicate)
         try {
@@ -353,13 +397,18 @@ export const useFarrowingStore = create((set, get) => ({
         } catch (e) { /* ignore */ }
       }
 
+      localStorage.setItem('pinaka_piglets', JSON.stringify(pigletsList));
+      try {
+        usePigletStore.getState().fetchPiglets();
+      } catch (e) {}
+
       // Refresh animal store state
       if (animalStore && animalStore.fetchAnimals) {
         animalStore.fetchAnimals();
       }
 
       const newRecord = {
-        _id: `far_${Date.now()}`,
+        _id: newFarrowingId,
         ...data,
         actualFarrowingDate: aDate.toISOString(),
         expectedWeaningDate: eWean.toISOString(),
@@ -402,6 +451,58 @@ export const useFarrowingStore = create((set, get) => ({
     }
   },
 
+  // ── Confirm Weaning ─────────────────────────────────────────────────────
+  confirmWeaning: async (farrowingId, operator, pigletsWeaned, notes) => {
+    set({ loading: true, error: null });
+    try {
+      const list = loadLocalFarrowings();
+      const updatedList = list.map(f => {
+        if (f._id === farrowingId) {
+          return {
+            ...f,
+            lactationStatus: 'Weaned',
+            pigletsWeaned: Number(pigletsWeaned),
+            actualWeaningDate: new Date().toISOString(),
+            notes: notes ? (f.notes ? `${f.notes}\nWeaning Notes: ${notes}` : `Weaning Notes: ${notes}`) : f.notes
+          };
+        }
+        return f;
+      });
+
+      saveLocalFarrowings(updatedList);
+
+      // Sync with Sow Store
+      const targetFarrowing = updatedList.find(f => f._id === farrowingId);
+      if (targetFarrowing) {
+        const sowStore = useSowStore.getState();
+        const sowMatch = sowStore.sows.find(s => s._id === targetFarrowing.sowId || s.animalNo === targetFarrowing.sowNo);
+        if (sowMatch) {
+          const updatedFarrowHistory = (sowMatch.farrowingHistory || []).map(fh => {
+            if (fh.farrowingDate === targetFarrowing.actualFarrowingDate) {
+              return { ...fh, weaningCount: Number(pigletsWeaned) };
+            }
+            return fh;
+          });
+          if (updatedFarrowHistory.length > 0 && !updatedFarrowHistory.some(fh => fh.farrowingDate === targetFarrowing.actualFarrowingDate)) {
+            updatedFarrowHistory[updatedFarrowHistory.length - 1].weaningCount = Number(pigletsWeaned);
+          }
+
+          await sowStore.updateSowDetails(sowMatch._id, {
+            status: 'Weaned',
+            farrowingHistory: updatedFarrowHistory
+          });
+        }
+      }
+
+      const matched = updatedList.find(f => f._id === farrowingId);
+      set({ farrowings: updatedList, selectedFarrowing: matched, loading: false });
+      return matched;
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
+  },
+
   // ── Mark Piglet Dead ────────────────────────────────────────────────────
   markPigletDead: async (farrowingId, pigletId, causeOfDeath = 'Unknown') => {
     set({ loading: true, error: null });
@@ -427,19 +528,6 @@ export const useFarrowingStore = create((set, get) => ({
       saveLocalFarrowings(updatedList);
       const match = updatedList.find(f => f._id === farrowingId);
       set({ farrowings: updatedList, selectedFarrowing: match, loading: false });
-
-      // Sync: Mark piglet as Dead in master animal registry
-      try {
-        const animals = JSON.parse(localStorage.getItem('pinaka_animals') || '[]');
-        const updated = animals.map(a =>
-          a.animalNo === pigletId
-            ? { ...a, lifecycleStage: 'Dead', operationalStatus: 'Culled' }
-            : a
-        );
-        localStorage.setItem('pinaka_animals', JSON.stringify(updated));
-        useAnimalStore.getState().fetchAnimals();
-      } catch (e) { /* ignore */ }
-
       return match;
     } catch (err) {
       set({ error: err.message, loading: false });
@@ -447,84 +535,9 @@ export const useFarrowingStore = create((set, get) => ({
     }
   },
 
-  // ── Promote Piglet to Grower ────────────────────────────────────────────
-  // Validates the grower ID is not already active, creates grower record,
-  // updates master registry, and auto-closes the litter when all piglets resolved.
-  promotePiglet: async (farrowingId, pigletId, growerId, promotionDate, notes = '', operator = 'System') => {
-    set({ loading: true, error: null });
+  syncPigletWeaningInLitter: (farrowingId, pigletId, finalId) => {
     try {
       const list = loadLocalFarrowings();
-      const farrowing = list.find(f => f._id === farrowingId);
-      if (!farrowing) throw new Error("Farrowing record not found.");
-      const piglet = (farrowing.piglets || []).find(p => p.pigletId === pigletId);
-      if (!piglet) throw new Error("Piglet not found in this litter.");
-      if (piglet.promotedToGrower) throw new Error("This piglet has already been promoted.");
-      if (piglet.status === 'Dead') throw new Error("Cannot promote a deceased piglet.");
-
-      // ── Validate weaning status ──
-      const ageDays = Math.floor((Date.now() - new Date(piglet.dob || farrowing.actualFarrowingDate).getTime()) / (1000 * 60 * 60 * 24));
-      const isWeaned = farrowing.lactationStatus === 'Weaned' || ageDays >= 60;
-      if (!isWeaned) {
-        throw new Error("Cannot promote piglet before weaning. Litter must be weaned or piglet must be at least 60 days old.");
-      }
-
-      // ── Validate Grower ID format ──
-      const cleanGrowerId = (growerId || '').trim().toUpperCase();
-      if (!cleanGrowerId) {
-        throw new Error("Grower ID cannot be empty.");
-      }
-      const validIdRegex = /^[A-Z0-9\-_]+$/;
-      if (!validIdRegex.test(cleanGrowerId)) {
-        throw new Error("Grower ID contains invalid characters. Only alphanumeric, hyphens (-), and underscores (_) are allowed.");
-      }
-
-      // ── Validate Grower ID uniqueness ──
-      // Check master animal registry for any active (non-dead, non-sold) animal with this ID
-      const animals = JSON.parse(localStorage.getItem('pinaka_animals') || '[]');
-      const conflict = animals.find(
-        a =>
-          a.animalNo === cleanGrowerId &&
-          !a.isDeleted &&
-          !['Dead', 'Sold', 'Culled', 'Archived'].includes(a.lifecycleStage)
-      );
-      if (conflict) {
-        throw new Error(
-          `Animal ID '${cleanGrowerId}' is currently active (${conflict.lifecycleStage}). Choose a different or reusable ID.`
-        );
-      }
-
-      // ── Create Grower Record ──
-      const growerStore = useGrowerStore.getState();
-      if (growerStore && typeof growerStore.createGrower === 'function') {
-        await growerStore.createGrower({
-          animalNo: cleanGrowerId,
-          animalId: cleanGrowerId,
-          dob: piglet.dob ? piglet.dob.split('T')[0] : new Date().toISOString().split('T')[0],
-          breed: piglet.breed || 'Crossbred',
-          sex: piglet.sex,
-          penNo: 'Grower Arrival Unit',
-          sireNo: farrowing.boarNo,
-          damNo: farrowing.sowNo,
-          birthWeight: piglet.birthWeight || 1.5,
-          weaningWeight: piglet.currentWeight || piglet.birthWeight || 1.5,
-          currentWeight: piglet.currentWeight || piglet.birthWeight || 1.5,
-          notes: `Promoted from Parity Litter. Origin Piglet: ${pigletId}. ${notes}`,
-          enteredBy: operator,
-          // Lifecycle source metadata
-          originPigletId: pigletId,
-          originalPigletId: pigletId,
-          temporaryPigletId: pigletId,
-          permanentGrowerId: cleanGrowerId,
-          sowId: farrowing.sowId || null,
-          boarId: farrowing.boarId || null,
-          farrowingId: farrowing._id || null,
-          lifecycleStage: 'Grower',
-          lifecycleSource: 'Farrowing Promotion',
-          promotionDate: promotionDate || new Date().toISOString().split('T')[0]
-        });
-      }
-
-      // ── Update farrowing piglet status ──
       const updatedList = list.map(f => {
         if (f._id !== farrowingId) return f;
         const updatedPiglets = (f.piglets || []).map(p => {
@@ -532,13 +545,10 @@ export const useFarrowingStore = create((set, get) => ({
           return {
             ...p,
             promotedToGrower: true,
-            permanentGrowerId: cleanGrowerId,
-            temporaryPigletId: pigletId,
-            status: 'Promoted',
-            promotionDate: promotionDate || new Date().toISOString().split('T')[0]
+            permanentGrowerId: finalId,
+            status: 'Promoted'
           };
         });
-        // Auto-close litter if all live piglets are dead or promoted
         const allResolved = updatedPiglets.every(
           p => p.status === 'Dead' || p.promotedToGrower === true || p.status === 'Promoted'
         );
@@ -549,174 +559,10 @@ export const useFarrowingStore = create((set, get) => ({
           pigletsTransferredToGrower: allResolved ? true : f.pigletsTransferredToGrower
         };
       });
-
       saveLocalFarrowings(updatedList);
-      const match = updatedList.find(f => f._id === farrowingId);
-      set({ farrowings: updatedList, selectedFarrowing: match, loading: false });
-
-      // ── Sync master animal registry ──
-      try {
-        const updated = animals.map(a => {
-          if (a.animalNo === pigletId) {
-            return {
-              ...a,
-              lifecycleStage: 'Grower',
-              animalNo: cleanGrowerId,
-              operationalStatus: 'Active',
-              currentPen: 'Grower Arrival Unit',
-              originalPigletId: pigletId,
-              temporaryPigletId: pigletId,
-              permanentGrowerId: cleanGrowerId
-            };
-          }
-          return a;
-        });
-        // If piglet wasn't in the registry, add the grower entry
-        if (!updated.find(a => a.animalNo === cleanGrowerId)) {
-          updated.unshift({
-            _id: `ani_${Date.now()}`,
-            animalNo: cleanGrowerId,
-            earTag: '',
-            dob: piglet.dob || new Date().toISOString(),
-            sex: piglet.sex,
-            breed: piglet.breed || 'Crossbred',
-            currentWeight: piglet.currentWeight || 1.5,
-            source: 'Farm Born',
-            supplier: '',
-            lifecycleStage: 'Grower',
-            currentPen: 'Grower Arrival Unit',
-            operationalStatus: 'Active',
-            operator,
-            notes: `Promoted from Piglet ${pigletId}`,
-            createdAt: new Date().toISOString(),
-            isDeleted: false,
-            originalPigletId: pigletId,
-            temporaryPigletId: pigletId,
-            permanentGrowerId: cleanGrowerId
-          });
-        }
-        localStorage.setItem('pinaka_animals', JSON.stringify(updated));
-        useAnimalStore.getState().fetchAnimals();
-      } catch (e) { /* ignore */ }
-
-      return match;
-    } catch (err) {
-      set({ error: err.message, loading: false });
-      throw err;
-    }
-  },
-
-  // ── Get Reusable Grower IDs ─────────────────────────────────────────────
-  // Returns IDs of animals that are Dead / Sold / Culled and can be reused.
-  getSuggestedReusableIds: () => {
-    try {
-      const animals = JSON.parse(localStorage.getItem('pinaka_animals') || '[]');
-      return animals
-        .filter(a =>
-          ['Dead', 'Sold', 'Culled', 'Archived'].includes(a.lifecycleStage) &&
-          /^G-/.test(a.animalNo)
-        )
-        .map(a => a.animalNo)
-        .slice(0, 5);
+      set({ farrowings: updatedList });
     } catch (e) {
-      return [];
-    }
-  },
-
-  // ── Confirm Weaning ─────────────────────────────────────────────────────
-  confirmWeaning: async (id, operator, pigletsWeaned, notes) => {
-    set({ loading: true, error: null });
-    try {
-      const list = loadLocalFarrowings();
-      let farrowSowId = null;
-
-      const updatedList = list.map(f => {
-        if (f._id === id) {
-          farrowSowId = f.sowId;
-          return {
-            ...f,
-            actualWeaningDate: new Date().toISOString(),
-            pigletsWeaned: Number(pigletsWeaned),
-            lactationStatus: 'Weaned',
-            notes: f.notes ? `${f.notes}\nWeaning: ${notes}` : `Weaning: ${notes}`
-          };
-        }
-        return f;
-      });
-
-      saveLocalFarrowings(updatedList);
-      const match = updatedList.find(f => f._id === id);
-      set({ farrowings: updatedList, selectedFarrowing: match, loading: false });
-
-      // Sync with Sow Store (update status to Weaned / Waiting for Heat)
-      if (farrowSowId) {
-        const sowStore = useSowStore.getState();
-        if (sowStore && sowStore.updateSowStatusDirect) {
-          await sowStore.updateSowStatusDirect(
-            farrowSowId,
-            'Waiting For Heat',
-            `Litter weaned. Count: ${pigletsWeaned}`,
-            operator
-          );
-        }
-      }
-
-      return match;
-    } catch (err) {
-      set({ error: err.message, loading: false });
-      throw err;
-    }
-  },
-
-  // ── Transfer Piglets to Grower (legacy batch mode) ──────────────────────
-  transferPigletsToGrower: async (id, operator, transferCount, avgWeight, notes) => {
-    set({ loading: true, error: null });
-    try {
-      const list = loadLocalFarrowings();
-      let match = list.find(f => f._id === id);
-      if (!match) throw new Error("Farrowing record not found.");
-      if (match.lactationStatus !== 'Weaned') throw new Error("Must confirm weaning before transfer.");
-      if (match.pigletsTransferredToGrower) throw new Error("Piglets already transferred.");
-
-      const growerStore = useGrowerStore.getState();
-      if (growerStore && typeof growerStore.createGrower === 'function') {
-        const baseTag = `G-${match.sowNo}-${Date.now().toString().slice(-4)}`;
-        for (let i = 0; i < Number(transferCount); i++) {
-          await growerStore.createGrower({
-            animalNo: `${baseTag}-${i + 1}`,
-            dob: match.actualFarrowingDate.split('T')[0],
-            breed: 'Crossbred',
-            penNo: 'Grower Arrival Unit',
-            sex: i % 2 === 0 ? 'Female' : 'Male',
-            sireNo: match.boarNo,
-            damNo: match.sowNo,
-            birthWeight: avgWeight,
-            notes: `Batch transferred from Sow ${match.sowNo} litter. ${notes}`,
-            enteredBy: operator
-          });
-        }
-      }
-
-      const updatedList = list.map(f => {
-        if (f._id === id) {
-          return {
-            ...f,
-            lactationStatus: 'Closed',
-            pigletsTransferredToGrower: true,
-            notes: f.notes ? `${f.notes}\nTransfer: ${notes}` : `Transfer: ${notes}`
-          };
-        }
-        return f;
-      });
-
-      saveLocalFarrowings(updatedList);
-      match = updatedList.find(f => f._id === id);
-      set({ farrowings: updatedList, selectedFarrowing: match, loading: false });
-
-      return match;
-    } catch (err) {
-      set({ error: err.message, loading: false });
-      throw err;
+      console.error("Failed to sync weaning in farrowing litter:", e);
     }
   },
 

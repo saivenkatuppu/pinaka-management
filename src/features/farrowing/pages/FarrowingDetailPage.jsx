@@ -29,15 +29,12 @@ export default function FarrowingDetailPage() {
     loading, 
     error, 
     fetchFarrowingById, 
-    confirmWeaning,
-    transferPigletsToGrower
+    confirmWeaning
   } = useFarrowingStore();
 
   const [isWeanOpen, setIsWeanOpen] = useState(false);
-  const [isTransferOpen, setIsTransferOpen] = useState(false);
   
   const [weanData, setWeanData] = useState({ pigletsWeaned: '', notes: '' });
-  const [transferData, setTransferData] = useState({ transferCount: '', avgWeight: '5.0', notes: '' });
   const [formError, setFormError] = useState('');
 
   useEffect(() => {
@@ -47,14 +44,8 @@ export default function FarrowingDetailPage() {
   // Modals Handlers
   const handleOpenWean = () => {
     setFormError('');
-    setWeanData({ pigletsWeaned: farrowing?.pigletsBornAlive || '', notes: 'Routine 60-day weaning schedule completed.' });
+    setWeanData({ pigletsWeaned: farrowing?.pigletsBornAlive || '', notes: 'Routine weaning schedule completed.' });
     setIsWeanOpen(true);
-  };
-
-  const handleOpenTransfer = () => {
-    setFormError('');
-    setTransferData({ transferCount: farrowing?.pigletsWeaned || '', avgWeight: '5.0', notes: 'Moved to grower unit.' });
-    setIsTransferOpen(true);
   };
 
   const submitWean = async (e) => {
@@ -63,17 +54,6 @@ export default function FarrowingDetailPage() {
     try {
       await confirmWeaning(id, user?.name, weanData.pigletsWeaned, weanData.notes);
       setIsWeanOpen(false);
-    } catch (err) {
-      setFormError(err.message);
-    }
-  };
-
-  const submitTransfer = async (e) => {
-    e.preventDefault();
-    setFormError('');
-    try {
-      await transferPigletsToGrower(id, user?.name, transferData.transferCount, transferData.avgWeight, transferData.notes);
-      setIsTransferOpen(false);
     } catch (err) {
       setFormError(err.message);
     }
@@ -252,27 +232,13 @@ export default function FarrowingDetailPage() {
                 </div>
               )}
 
-              {isWeaned && !farrowing.pigletsTransferredToGrower && (
+              {(isWeaned || isClosed) && (
                 <div className="flex flex-col gap-4">
                   <div className="bg-success/10 text-success p-3 rounded border border-success/20 text-[11px] font-bold uppercase text-center">
                     Weaning Confirmed
                   </div>
-                  <p className="text-[11px] text-textSecondary">Piglets are weaned and ready to be transferred to the Grower module for growth tracking.</p>
-                  <button 
-                    onClick={handleOpenTransfer}
-                    className="w-full py-2.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 uppercase text-xs font-bold rounded flex items-center justify-center gap-2 transition-colors"
-                  >
-                    <Truck className="w-4 h-4" /> Move Piglets to Grower
-                  </button>
+                  <p className="text-[11px] text-textSecondary">Weaning has been completed. The piglets are tracked individually in the Piglet module, and the farrowing cycle is closed.</p>
                 </div>
-              )}
-
-              {farrowing.pigletsTransferredToGrower && (
-                 <div className="bg-sidebar border border-borderDark p-4 rounded flex flex-col items-center justify-center text-center">
-                   <Baby className="w-8 h-8 text-blueAccent mb-2" />
-                   <span className="text-xs font-black uppercase text-blueAccent tracking-widest">Piglets Transferred</span>
-                   <span className="text-[10px] text-textSecondary mt-1">Litter is now tracked in the Grower module. Farrowing cycle closed.</span>
-                 </div>
               )}
             </div>
 
@@ -328,34 +294,7 @@ export default function FarrowingDetailPage() {
           </form>
         </Modal>
 
-        {/* Modal: Transfer to Grower */}
-        <Modal
-          isOpen={isTransferOpen}
-          onClose={() => setIsTransferOpen(false)}
-          title="Transfer Piglets to Grower Module"
-          footer={
-            <>
-              <button onClick={() => setIsTransferOpen(false)} className="px-4 py-2 hover:bg-cardBg border border-borderDark text-textSecondary text-xs rounded uppercase font-bold">Cancel</button>
-              <button onClick={submitTransfer} className="px-4 py-2 bg-primary hover:bg-primary-dark text-black text-xs rounded uppercase font-bold shadow-md">Transfer to Grower</button>
-            </>
-          }
-        >
-          <form className="flex flex-col gap-4 text-xs">
-            {formError && <div className="bg-danger/10 border border-danger/25 p-3 rounded text-danger font-medium text-[11px]">{formError}</div>}
-            <p className="text-[11px] text-textSecondary">This action will automatically generate individual records in the Grower Module for these piglets, closing the farrowing cycle.</p>
-            <FormGrid cols={2}>
-              <FormField label="Piglets to Transfer" required>
-                <input type="number" disabled value={transferData.transferCount} className="dense-input opacity-70 font-bold" />
-              </FormField>
-              <FormField label="Average Weight (kg) per piglet" required>
-                <input type="number" step="0.1" value={transferData.avgWeight} onChange={(e) => setTransferData({...transferData, avgWeight: e.target.value})} className="dense-input" required />
-              </FormField>
-            </FormGrid>
-            <FormField label="Transfer Remarks">
-              <textarea rows={3} value={transferData.notes} onChange={(e) => setTransferData({...transferData, notes: e.target.value})} className="dense-input w-full p-2" />
-            </FormField>
-          </form>
-        </Modal>
+
 
       </div>
     </MainLayout>

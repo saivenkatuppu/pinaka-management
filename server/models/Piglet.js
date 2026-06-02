@@ -68,7 +68,7 @@ const PromotionHistorySchema = new mongoose.Schema({
   }
 });
 
-const GrowerSchema = new mongoose.Schema({
+const PigletSchema = new mongoose.Schema({
   animalNo: {
     type: String,
     required: [true, 'Animal Number is required'],
@@ -77,13 +77,14 @@ const GrowerSchema = new mongoose.Schema({
     uppercase: true
   },
   dob: {
-    type: Date,
+    type: mongoose.Schema.Types.Mixed, // support Date or String for Unknown
     required: [true, 'Date of Birth is required']
   },
   sex: {
     type: String,
-    enum: ['Male', 'Female'],
-    required: [true, 'Sex is required']
+    enum: ['Male', 'Female', 'Unknown'],
+    required: [true, 'Sex is required'],
+    default: 'Unknown'
   },
   breed: {
     type: String,
@@ -119,30 +120,32 @@ const GrowerSchema = new mongoose.Schema({
   latestWeight: {
     type: Number
   },
-  adg: {
-    type: Number,
-    default: 0
-  },
   status: {
     type: String,
-    enum: [
-      'Active', 
-      'Under Observation', 
-      'Breeding Candidate', 
-      'Promoted to Sow', 
-      'Promoted to Boar', 
-      'Sold', 
-      'Slaughtered', 
-      'Dead'
-    ],
-    default: 'Active'
+    enum: ['Lactating', 'Pending Profile Completion', 'Weaned', 'Under Treatment', 'Dead'],
+    default: 'Lactating'
   },
-  slaughterDate: {
-    type: Date
+  source: {
+    type: String,
+    enum: ['Farm Born', 'Purchased', 'Imported', 'Grower Promotion', 'WeaningPromotion'],
+    default: 'Farm Born'
+  },
+  expectedWeaningDate: {
+    type: Date,
+    default: null
+  },
+  lactationStatus: {
+    type: String,
+    enum: ['Lactating', 'Weaning Ready'],
+    default: 'Lactating'
   },
   notes: {
     type: String,
     default: ''
+  },
+  farrowingId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Farrowing'
   },
   weightLogs: [WeightLogSchema],
   statusHistory: [StatusHistorySchema],
@@ -175,10 +178,10 @@ const GrowerSchema = new mongoose.Schema({
 });
 
 // Pre-save hook: automatically sync birthWeight to weightLogs if empty
-GrowerSchema.pre('save', function(next) {
+PigletSchema.pre('save', function(next) {
   if (this.isNew && (!this.weightLogs || this.weightLogs.length === 0)) {
     this.weightLogs = [{
-      date: this.dob,
+      date: this.dob instanceof Date ? this.dob : new Date(),
       type: 'Birth',
       weight: this.birthWeight,
       notes: 'Initial birth weight',
@@ -192,29 +195,21 @@ GrowerSchema.pre('save', function(next) {
       previousStatus: 'None',
       newStatus: this.status,
       updatedBy: 'System',
-      notes: 'Initial registration',
+      notes: 'Initial birth registration',
       updatedAt: new Date()
     }];
   }
 
-  // Sync latestWeight and calculate ADG
+  // Sync latestWeight
   if (this.weightLogs && this.weightLogs.length > 0) {
     const sorted = [...this.weightLogs].sort((a, b) => new Date(a.date) - new Date(b.date));
     const latest = sorted[sorted.length - 1];
     this.latestWeight = latest.weight;
-
-    const ageInDays = Math.ceil((new Date(latest.date) - new Date(this.dob)) / (1000 * 60 * 60 * 24));
-    if (ageInDays > 0) {
-      this.adg = Number(((latest.weight - this.birthWeight) / ageInDays).toFixed(3));
-    } else {
-      this.adg = 0;
-    }
   } else {
     this.latestWeight = this.birthWeight;
-    this.adg = 0;
   }
 
   next();
 });
 
-export default mongoose.model('Grower', GrowerSchema);
+export default mongoose.model('Piglet', PigletSchema);

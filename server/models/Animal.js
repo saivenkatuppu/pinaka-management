@@ -11,7 +11,7 @@ const animalSchema = new mongoose.Schema({
     default: ''
   },
   dob: {
-    type: Date,
+    type: mongoose.Schema.Types.Mixed,
     required: true
   },
   sex: {
@@ -30,7 +30,7 @@ const animalSchema = new mongoose.Schema({
   },
   source: {
     type: String,
-    enum: ['Farm Born', 'Purchased', 'Imported', 'Grower Promotion'],
+    enum: ['Farm Born', 'Purchased', 'Imported', 'Grower Promotion', 'WeaningPromotion'],
     default: 'Farm Born'
   },
   supplier: {
@@ -43,14 +43,32 @@ const animalSchema = new mongoose.Schema({
     type: String,
     enum: [
       'Piglet', 
-      'Grower', 
-      'Breeding Candidate',
       'Sow', 
       'Boar', 
       'Sold', 
       'Dead', 
       'Retired'
     ],
+    default: 'Piglet'
+  },
+  animalType: {
+    type: String,
+    enum: ['Piglet', 'Sow', 'Boar'],
+    default: 'Piglet'
+  },
+  purpose: {
+    type: String,
+    enum: ['Breeding', 'Fattening', 'Pending', 'N/A'],
+    default: 'Pending'
+  },
+  castrationStatus: {
+    type: String,
+    enum: ['Castrated', 'Not Castrated', 'N/A'],
+    default: 'N/A'
+  },
+  moduleAssignment: {
+    type: String,
+    enum: ['Piglet', 'Sow', 'Boar'],
     default: 'Piglet'
   },
   currentPen: {
@@ -86,9 +104,9 @@ const animalSchema = new mongoose.Schema({
     ref: 'Boar',
     default: null
   },
-  growerRef: {
+  pigletRef: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Grower',
+    ref: 'Piglet',
     default: null
   },
   
@@ -99,6 +117,23 @@ const animalSchema = new mongoose.Schema({
   notes: {
     type: String,
     default: ''
+  },
+  sireNo: {
+    type: String,
+    default: ''
+  },
+  damNo: {
+    type: String,
+    default: ''
+  },
+  expectedWeaningDate: {
+    type: Date,
+    default: null
+  },
+  lactationStatus: {
+    type: String,
+    enum: ['Lactating', 'Weaning Ready'],
+    default: 'Lactating'
   },
   isDeleted: {
     type: Boolean,

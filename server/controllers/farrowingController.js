@@ -1,6 +1,7 @@
 import Farrowing from '../models/Farrowing.js';
 import Sow from '../models/Sow.js';
-import Grower from '../models/Grower.js';
+import Piglet from '../models/Piglet.js';
+import Animal from '../models/Animal.js';
 
 // @desc    Get all farrowings
 // @route   GET /api/farrowings
@@ -52,12 +53,51 @@ export const createFarrowing = async (req, res, next) => {
     const aDate = new Date(actualFarrowingDate || Date.now());
     
     // Auto-generate Piglets roster
+    const baseCount = await Piglet.countDocuments();
     const pigletsArray = [];
+    
     for(let i=0; i < (pigletsBornAlive || 0); i++) {
+      const seq = (baseCount + i + 1).toString().padStart(3, '0');
+      const tag = `P-${seq}`;
+      const sex = i % 2 === 0 ? 'Female' : 'Male'; // Mock alternating sex distribution
+      
+      // Create Piglet document
+      const pigletDoc = await Piglet.create({
+        animalNo: tag,
+        dob: aDate,
+        sex,
+        breed: sow.breed || 'Crossbred',
+        sireNo: boarNo || 'UNKNOWN',
+        damNo: sowNo || 'UNKNOWN',
+        birthWeight: 1.5,
+        penNo: sow.penNo || 'Farrowing Unit',
+        status: 'Lactating',
+        notes: `Born in litter to Sow ${sowNo}`,
+        createdBy: req.user ? req.user.id : null
+      });
+
+      // Create master Animal document
+      await Animal.create({
+        animalNo: tag,
+        earTag: tag,
+        dob: aDate,
+        sex,
+        breed: sow.breed || 'Crossbred',
+        currentWeight: 1.5,
+        source: 'Farm Born',
+        lifecycleStage: 'Piglet',
+        animalType: 'Piglet',
+        purpose: 'Pending',
+        moduleAssignment: 'Piglet',
+        currentPen: sow.penNo || 'Farrowing Unit',
+        operationalStatus: 'Active',
+        pigletRef: pigletDoc._id
+      });
+
       pigletsArray.push({
-        pigletId: `L-${sowNo}-${Date.now().toString().slice(-4)}-${i+1}`,
-        sex: i % 2 === 0 ? 'Female' : 'Male', // Mock distribution
-        birthWeight: 1.5, // Default birth weight
+        pigletId: tag,
+        sex,
+        birthWeight: 1.5,
         currentWeight: 1.5,
         status: 'Nursing'
       });
@@ -162,75 +202,7 @@ export const confirmWeaning = async (req, res, next) => {
   }
 };
 
-// @desc    Transfer Piglets to Grower
-// @route   PUT /api/farrowings/:id/transfer-grower
-// @access  Private
-export const transferToGrower = async (req, res, next) => {
-  try {
-    const { pigletsToTransfer, averageWeight, operator, notes } = req.body;
-    const farrowing = await Farrowing.findById(req.params.id);
 
-    if (!farrowing || farrowing.isDeleted) {
-      res.status(404);
-      throw new Error('Farrowing record not found');
-    }
-
-    if (farrowing.lactationStatus !== 'Weaned') {
-      res.status(400);
-      throw new Error('Piglets must be weaned before transfer');
-    }
-
-    if (farrowing.pigletsTransferredToGrower) {
-      res.status(400);
-      throw new Error('Piglets already transferred to Grower module');
-    }
-
-    // Create growers directly from the piglets array
-    const growerDocs = [];
-    
-    // Only transfer those who survived (are weaned)
-    const survivedPiglets = farrowing.piglets.filter(p => p.status === 'Weaned' || p.status === 'Nursing');
-    
-    for (let i = 0; i < survivedPiglets.length && i < pigletsToTransfer; i++) {
-      const pig = survivedPiglets[i];
-      growerDocs.push({
-        animalNo: pig.pigletId, // Retain original Baby ID
-        dob: farrowing.actualFarrowingDate,
-        batchId: `BATCH-${farrowing._id}`,
-        breed: 'Crossbred',
-        sireNo: farrowing.boarNo,
-        damNo: farrowing.sowNo,
-        birthWeight: pig.birthWeight,
-        latestWeight: pig.currentWeight || averageWeight,
-        sex: pig.sex,
-        penNo: 'Grower Arrival Unit',
-        status: 'Active',
-        notes: `Transferred from Farrowing Litter of Sow ${farrowing.sowNo}`,
-        statusHistory: [{
-          previousStatus: 'None',
-          newStatus: 'Active',
-          updatedBy: operator || 'System',
-          notes: 'Received from farrowing unit'
-        }]
-      });
-      // Update piglet status in litter record
-      pig.status = 'Transferred';
-    }
-
-    if (growerDocs.length > 0) {
-      await Grower.insertMany(growerDocs);
-    }
-
-    farrowing.pigletsTransferredToGrower = true;
-    farrowing.lactationStatus = 'Closed';
-    if (notes) farrowing.notes = farrowing.notes ? `${farrowing.notes}\nTransfer: ${notes}` : `Transfer: ${notes}`;
-
-    const updatedFarrowing = await farrowing.save();
-    res.status(200).json(updatedFarrowing);
-  } catch (error) {
-    next(error);
-  }
-};
 
 // @desc    Update Piglet (Weight, Status)
 // @route   PUT /api/farrowings/:id/piglet/:pigletId

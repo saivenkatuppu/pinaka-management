@@ -30,6 +30,21 @@ import {
   User
 } from 'lucide-react';
 
+// Date Formatting Helpers for Safeguarding Invalid Date parsing crashes
+const formatDate = (dateVal) => {
+  if (!dateVal || dateVal === 'Unknown' || dateVal === 'N/A' || isNaN(new Date(dateVal).getTime())) {
+    return 'Unknown / N/A';
+  }
+  return new Date(dateVal).toLocaleDateString();
+};
+
+const formatDateOptional = (dateVal) => {
+  if (!dateVal || dateVal === 'Unknown' || dateVal === 'N/A' || isNaN(new Date(dateVal).getTime())) {
+    return '—';
+  }
+  return new Date(dateVal).toLocaleDateString();
+};
+
 export default function SowDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -58,6 +73,8 @@ export default function SowDetailPage() {
   const [isPregnancyOpen, setIsPregnancyOpen] = useState(false);
   const [isFarrowingOpen, setIsFarrowingOpen] = useState(false);
   const [isTreatmentOpen, setIsTreatmentOpen] = useState(false);
+  const [isFatteningOpen, setIsFatteningOpen] = useState(false);
+  const [fatteningReason, setFatteningReason] = useState('');
 
   // 2. Forms payload states
   const [editDetailsData, setEditDetailsData] = useState({
@@ -142,7 +159,7 @@ export default function SowDetailPage() {
 
   // Age Calculations
   const ageInDays = useMemo(() => {
-    if (!selectedSow) return 0;
+    if (!selectedSow || !selectedSow.dob || selectedSow.dob === 'Unknown' || selectedSow.dob === 'N/A' || isNaN(new Date(selectedSow.dob).getTime())) return 0;
     const diffTime = Math.abs(new Date() - new Date(selectedSow.dob));
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   }, [selectedSow]);
@@ -153,7 +170,7 @@ export default function SowDetailPage() {
 
   // Gestation Progress Calculations (114 days)
   const gestationInfo = useMemo(() => {
-    if (!selectedSow || !selectedSow.lastServiceDate) return null;
+    if (!selectedSow || !selectedSow.lastServiceDate || isNaN(new Date(selectedSow.lastServiceDate).getTime())) return null;
     
     const serviceDate = new Date(selectedSow.lastServiceDate);
     const expectedDate = new Date(selectedSow.expectedFarrowingDate || (serviceDate.getTime() + (114 * 24 * 60 * 60 * 1000)));
@@ -166,8 +183,8 @@ export default function SowDetailPage() {
     const overdueDays = isOverdue ? Math.ceil((now - expectedDate) / (1000 * 60 * 60 * 24)) : 0;
 
     return {
-      serviceDate: serviceDate.toLocaleDateString(),
-      expectedDate: expectedDate.toLocaleDateString(),
+      serviceDate: formatDate(serviceDate),
+      expectedDate: formatDate(expectedDate),
       elapsedDays,
       remainingDays,
       percentage,
@@ -178,13 +195,11 @@ export default function SowDetailPage() {
 
   // Litter Weaning Efficiency Metrics
   const litterMetrics = useMemo(() => {
-    if (!selectedSow || !selectedSow.farrowingHistory || selectedSow.farrowingHistory.length === 0) return null;
-    
-    const history = selectedSow.farrowingHistory;
+    const history = selectedSow?.farrowingHistory || [];
     const totalBornAlive = history.reduce((acc, f) => acc + (f.bornAlive || 0), 0);
     const totalWeaned = history.reduce((acc, f) => acc + (f.weaningCount || 0), 0);
-    const avgBornAlive = (totalBornAlive / history.length).toFixed(1);
-    const avgWeaned = (totalWeaned / history.length).toFixed(1);
+    const avgBornAlive = history.length > 0 ? (totalBornAlive / history.length).toFixed(1) : '0.0';
+    const avgWeaned = history.length > 0 ? (totalWeaned / history.length).toFixed(1) : '0.0';
     const weaningSurvivalRate = totalBornAlive > 0 ? ((totalWeaned / totalBornAlive) * 100).toFixed(1) : '0.0';
     const totalWeightWeaned = history.reduce((acc, f) => acc + (f.weaningWeight || 0), 0);
     const avgWeaningWeight = totalWeaned > 0 ? (totalWeightWeaned / totalWeaned).toFixed(2) : '0.00';
@@ -448,7 +463,21 @@ export default function SowDetailPage() {
     }
   };
 
-  const isFetching = loading || (!selectedSow && !error) || (selectedSow && selectedSow._id !== id && !error);
+  const handleFatteningSubmit = async (e) => {
+    e.preventDefault();
+    setFormError('');
+    try {
+      const { useSowStore } = await import('../../../store/useSowStore');
+      await useSowStore.getState().moveToFattening(id, fatteningReason);
+      setIsFatteningOpen(false);
+      alert('Sow successfully retired and moved to Fattening.');
+      fetchSowById(id);
+    } catch (err) {
+      setFormError(err.message);
+    }
+  };
+
+  const isFetching = loading || (!selectedSow && !error) || (selectedSow && selectedSow._id !== id && selectedSow.animalNo !== id && !error);
 
   if (isFetching) {
     return (
@@ -490,7 +519,7 @@ export default function SowDetailPage() {
       <div className="flex flex-col gap-5 w-full">
         
         {/* Dynamic Countdown Warning Banner */}
-        {activeHeatWarning && (
+        {selectedSow.purpose !== 'Fattening' && activeHeatWarning && (
           <div className={`p-3 rounded-lg border text-xs flex items-center justify-between no-print ${
             activeHeatWarning.isClosing ? 'bg-danger/10 border-danger/60 text-danger shadow-glow-danger' : 'bg-primary/10 border-primary/40 text-primary'
           }`}>
@@ -513,7 +542,7 @@ export default function SowDetailPage() {
         )}
 
         {/* Gestation Countdown Warning Banner */}
-        {gestationInfo && selectedSow.status === 'Pregnant' && (
+        {selectedSow.purpose !== 'Fattening' && gestationInfo && selectedSow.status === 'Pregnant' && (
           <div className="bg-success/10 border border-success/40 p-3 rounded-lg text-xs flex items-center justify-between no-print text-success">
             <div className="flex items-center gap-2">
               <Calendar className="w-4.5 h-4.5 text-success" />
@@ -550,7 +579,7 @@ export default function SowDetailPage() {
                 Sow Card: <span className="text-primary font-black select-all">{selectedSow.animalNo}</span>
               </h2>
               <p className="text-[9px] text-textSecondary uppercase tracking-widest mt-1">
-                Breed: {selectedSow.breed} • Parity: Parity #{selectedSow.parityCount || 0} • Age: {ageInMonths} Months Old
+                Breed: {selectedSow.breed} {selectedSow.purpose !== 'Fattening' ? `• Parity: Parity #${selectedSow.parityCount || 0}` : '• Fattening Retired'} • Age: {ageInMonths} Months Old
               </p>
             </div>
           </div>
@@ -567,42 +596,46 @@ export default function SowDetailPage() {
             
             {canEdit && !isInactive && (
               <div className="flex items-center gap-1.5">
-                <button
-                  onClick={handleOpenHeat}
-                  disabled={selectedSow.status === 'Pregnant'}
-                  className="px-2.5 py-2 bg-secondary hover:bg-cardBg text-primary disabled:opacity-40 disabled:cursor-not-allowed border border-borderDark/50 text-xs font-bold rounded flex items-center gap-1 uppercase tracking-wider"
-                  title="Log Heat Cycle Observation"
-                >
-                  <Flame className="w-3.5 h-3.5" />
-                  + Heat Log
-                </button>
-                <button
-                  onClick={handleOpenBreeding}
-                  disabled={selectedSow.status === 'Pregnant'}
-                  className="px-2.5 py-2 bg-secondary hover:bg-cardBg text-blueAccent disabled:opacity-40 disabled:cursor-not-allowed border border-borderDark/50 text-xs font-bold rounded flex items-center gap-1 uppercase tracking-wider"
-                  title="Log Mating / Service Session"
-                >
-                  <Award className="w-3.5 h-3.5" />
-                  + Breeding Log
-                </button>
-                <button
-                  onClick={handleOpenPregnancy}
-                  disabled={selectedSow.status !== 'Pregnancy Pending'}
-                  className="px-2.5 py-2 bg-secondary hover:bg-cardBg text-warning disabled:opacity-40 disabled:cursor-not-allowed border border-borderDark/50 text-xs font-bold rounded flex items-center gap-1 uppercase tracking-wider"
-                  title="Log Pregnancy Confirmation (Ultrasound)"
-                >
-                  <Activity className="w-3.5 h-3.5" />
-                  + Scan Check
-                </button>
-                <button
-                  onClick={handleOpenFarrowing}
-                  disabled={selectedSow.status !== 'Pregnant'}
-                  className="px-2.5 py-2 bg-secondary hover:bg-cardBg text-success disabled:opacity-40 disabled:cursor-not-allowed border border-borderDark/50 text-xs font-bold rounded flex items-center gap-1 uppercase tracking-wider"
-                  title="Log Farrowing & Piglet Litters"
-                >
-                  <Heart className="w-3.5 h-3.5" />
-                  + Farrow Log
-                </button>
+                {selectedSow.purpose !== 'Fattening' && (
+                  <>
+                    <button
+                      onClick={handleOpenHeat}
+                      disabled={selectedSow.status === 'Pregnant'}
+                      className="px-2.5 py-2 bg-secondary hover:bg-cardBg text-primary disabled:opacity-40 disabled:cursor-not-allowed border border-borderDark/50 text-xs font-bold rounded flex items-center gap-1 uppercase tracking-wider"
+                      title="Log Heat Cycle Observation"
+                    >
+                      <Flame className="w-3.5 h-3.5" />
+                      + Heat Log
+                    </button>
+                    <button
+                      onClick={handleOpenBreeding}
+                      disabled={selectedSow.status === 'Pregnant'}
+                      className="px-2.5 py-2 bg-secondary hover:bg-cardBg text-blueAccent disabled:opacity-40 disabled:cursor-not-allowed border border-borderDark/50 text-xs font-bold rounded flex items-center gap-1 uppercase tracking-wider"
+                      title="Log Mating / Service Session"
+                    >
+                      <Award className="w-3.5 h-3.5" />
+                      + Breeding Log
+                    </button>
+                    <button
+                      onClick={handleOpenPregnancy}
+                      disabled={selectedSow.status !== 'Pregnancy Pending'}
+                      className="px-2.5 py-2 bg-secondary hover:bg-cardBg text-warning disabled:opacity-40 disabled:cursor-not-allowed border border-borderDark/50 text-xs font-bold rounded flex items-center gap-1 uppercase tracking-wider"
+                      title="Log Pregnancy Confirmation (Ultrasound)"
+                    >
+                      <Activity className="w-3.5 h-3.5" />
+                      + Scan Check
+                    </button>
+                    <button
+                      onClick={handleOpenFarrowing}
+                      disabled={selectedSow.status !== 'Pregnant'}
+                      className="px-2.5 py-2 bg-secondary hover:bg-cardBg text-success disabled:opacity-40 disabled:cursor-not-allowed border border-borderDark/50 text-xs font-bold rounded flex items-center gap-1 uppercase tracking-wider"
+                      title="Log Farrowing & Piglet Litters"
+                    >
+                      <Heart className="w-3.5 h-3.5" />
+                      + Farrow Log
+                    </button>
+                  </>
+                )}
                 <button
                   onClick={handleOpenTreatment}
                   className="px-2.5 py-2 bg-secondary hover:bg-cardBg text-danger border border-borderDark/50 text-xs font-bold rounded flex items-center gap-1 uppercase tracking-wider"
@@ -615,13 +648,28 @@ export default function SowDetailPage() {
             )}
 
             {canEdit && !isInactive && (
-              <button
-                onClick={handleOpenEditDetails}
-                className="px-3 py-2 bg-primary hover:bg-primary-dark text-black text-xs font-bold rounded shadow-md hover:shadow-glow transition-all flex items-center gap-1.5 uppercase tracking-wider"
-              >
-                <Edit className="w-3.5 h-3.5" />
-                Edit Details
-              </button>
+              <div className="flex items-center gap-1.5">
+                {selectedSow.purpose !== 'Fattening' && (
+                  <button
+                    onClick={() => {
+                      setFormError('');
+                      setFatteningReason('');
+                      setIsFatteningOpen(true);
+                    }}
+                    className="px-3 py-2 bg-warning hover:bg-warning/80 text-black text-xs font-bold rounded shadow-md transition-all flex items-center gap-1.5 uppercase tracking-wider"
+                  >
+                    <Activity className="w-3.5 h-3.5" />
+                    Move to Fattening
+                  </button>
+                )}
+                <button
+                  onClick={handleOpenEditDetails}
+                  className="px-3 py-2 bg-primary hover:bg-primary-dark text-black text-xs font-bold rounded shadow-md hover:shadow-glow transition-all flex items-center gap-1.5 uppercase tracking-wider"
+                >
+                  <Edit className="w-3.5 h-3.5" />
+                  Edit Details
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -637,7 +685,7 @@ export default function SowDetailPage() {
             <div className="grid grid-cols-3 gap-4 border-b border-black pb-4 text-[11px]">
               <div><strong>Sow Animal No:</strong> <span className="underline font-sans font-bold text-sm">{selectedSow.animalNo}</span></div>
               <div><strong>Breed:</strong> <span className="underline">{selectedSow.breed}</span></div>
-              <div><strong>DOB:</strong> <span className="underline">{new Date(selectedSow.dob).toLocaleDateString()}</span></div>
+              <div><strong>DOB:</strong> <span className="underline">{formatDate(selectedSow.dob)}</span></div>
               <div><strong>Sire No (Father):</strong> <span className="underline">{selectedSow.sireNo}</span></div>
               <div><strong>Dam No (Mother):</strong> <span className="underline">{selectedSow.damNo}</span></div>
               <div><strong>Latest Weight:</strong> <span className="underline font-sans font-bold">{selectedSow.latestWeight || '150'} kg</span></div>
@@ -668,7 +716,7 @@ export default function SowDetailPage() {
                     selectedSow.farrowingHistory.map((f, idx) => (
                       <tr key={idx} className="border-b border-gray-300">
                         <td className="py-1 font-bold">Parity {f.parity}</td>
-                        <td className="py-1">{new Date(f.farrowingDate).toLocaleDateString()}</td>
+                        <td className="py-1">{formatDate(f.farrowingDate)}</td>
                         <td className="py-1 font-bold">{f.bornAlive} piglets</td>
                         <td className="py-1">{f.bornDead}</td>
                         <td className="py-1">{f.stillborn}</td>
@@ -706,11 +754,11 @@ export default function SowDetailPage() {
                   {selectedSow.breedingHistory && selectedSow.breedingHistory.length > 0 ? (
                     selectedSow.breedingHistory.map((b, idx) => (
                       <tr key={idx} className="border-b border-gray-300">
-                        <td className="py-1">{new Date(b.serviceDate).toLocaleDateString()}</td>
+                        <td className="py-1">{formatDate(b.serviceDate)}</td>
                         <td className="py-1 font-bold">{b.boarAnimalNo}</td>
                         <td className="py-1">{b.matingType}</td>
                         <td className="py-1 font-bold">{b.pregnancyConfirmed}</td>
-                        <td className="py-1">{b.expectedFarrowingDate ? new Date(b.expectedFarrowingDate).toLocaleDateString() : '-'}</td>
+                        <td className="py-1">{formatDateOptional(b.expectedFarrowingDate)}</td>
                         <td className="py-1">{b.technician}</td>
                         <td className="py-1 text-gray-700 italic">{b.notes || '-'}</td>
                       </tr>
@@ -742,7 +790,7 @@ export default function SowDetailPage() {
                   {selectedSow.treatmentHistory && selectedSow.treatmentHistory.length > 0 ? (
                     selectedSow.treatmentHistory.map((t, idx) => (
                       <tr key={idx} className="border-b border-gray-300">
-                        <td className="py-1">{new Date(t.treatmentDate).toLocaleDateString()}</td>
+                        <td className="py-1">{formatDate(t.treatmentDate)}</td>
                         <td className="py-1">{t.symptoms}</td>
                         <td className="py-1 font-bold">{t.diagnosis}</td>
                         <td className="py-1">{t.medicineUsed || '-'}</td>
@@ -775,224 +823,228 @@ export default function SowDetailPage() {
           <div className="xl:col-span-2 flex flex-col gap-5">
             
             {/* Section 2: Reproductive Lifecycle Timeline Chart */}
-            <div className="bg-cardBg border border-borderDark rounded-lg p-5">
-              <div className="flex items-center justify-between mb-4 border-b border-borderDark/50 pb-2">
-                <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 2: Lifetime Parity & Farrowing Performance Chart</span>
-                <span className="text-[9px] text-textSecondary uppercase">Born Alive vs Weaning survival metrics</span>
-              </div>
-              
-              <div className="w-full h-64">
-                {chartData.length === 0 ? (
-                  <div className="w-full h-full flex flex-col items-center justify-center text-textSecondary text-[11px] gap-1">
-                    <AlertCircle className="w-5 h-5 text-textSecondary/50" />
-                    <span>Log farrowing history parity data to compute breeding efficiency trendlines</span>
+            {selectedSow.purpose !== 'Fattening' && (
+              <>
+                <div className="bg-cardBg border border-borderDark rounded-lg p-5">
+                  <div className="flex items-center justify-between mb-4 border-b border-borderDark/50 pb-2">
+                    <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 2: Lifetime Parity & Farrowing Performance Chart</span>
+                    <span className="text-[9px] text-textSecondary uppercase">Born Alive vs Weaning survival metrics</span>
                   </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.4} />
-                      <XAxis dataKey="parity" stroke="var(--color-text-muted)" fontSize={9} tickLine={false} />
-                      <YAxis stroke="var(--color-text-muted)" fontSize={9} tickLine={false} />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: 'var(--color-card-bg)', border: '1px solid var(--color-border)', borderRadius: '6px' }}
-                        labelStyle={{ color: 'var(--color-text-primary)', fontSize: '9px', fontWeight: 'bold' }}
-                        itemStyle={{ fontSize: '10px' }}
-                      />
-                      <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: '10px' }} />
-                      <Bar dataKey="Born Alive" fill="var(--color-primary)" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="Weaned" fill="var(--color-success)" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+                  
+                  <div className="w-full h-64">
+                    {chartData.length === 0 ? (
+                      <div className="w-full h-full flex flex-col items-center justify-center text-textSecondary text-[11px] gap-1">
+                        <AlertCircle className="w-5 h-5 text-textSecondary/50" />
+                        <span>Log farrowing history parity data to compute breeding efficiency trendlines</span>
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.4} />
+                          <XAxis dataKey="parity" stroke="var(--color-text-muted)" fontSize={9} tickLine={false} />
+                          <YAxis stroke="var(--color-text-muted)" fontSize={9} tickLine={false} />
+                          <Tooltip 
+                            contentStyle={{ backgroundColor: 'var(--color-card-bg)', border: '1px solid var(--color-border)', borderRadius: '6px' }}
+                            labelStyle={{ color: 'var(--color-text-primary)', fontSize: '9px', fontWeight: 'bold' }}
+                            itemStyle={{ fontSize: '10px' }}
+                          />
+                          <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: '10px' }} />
+                          <Bar dataKey="Born Alive" fill="var(--color-primary)" radius={[4, 4, 0, 0]} />
+                          <Bar dataKey="Weaned" fill="var(--color-success)" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                </div>
+
+                {/* Section 5: Gestation Progress Visualizer */}
+                {selectedSow.status === 'Pregnant' && gestationInfo && (
+                  <div className="bg-cardBg border border-borderDark rounded-lg p-5">
+                    <div className="flex items-center justify-between mb-3.5 border-b border-borderDark/50 pb-2">
+                      <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 5: Gestation Progress Tracker (114 Days Cycle)</span>
+                      <span className="text-[9px] uppercase tracking-wider text-textSecondary">Gestation Timeline</span>
+                    </div>
+                    
+                    <div className="flex flex-col gap-3">
+                      <div className="flex justify-between text-xs text-textSecondary">
+                        <span>Mating: <strong>{gestationInfo.serviceDate}</strong></span>
+                        <span className="text-primary font-bold">{gestationInfo.percentage}% Completed</span>
+                        <span>Due Target farrowing: <strong>{gestationInfo.expectedDate}</strong></span>
+                      </div>
+                      
+                      {/* Visual Progress Bar */}
+                      <div className="w-full bg-surface rounded-full h-3.5 border border-borderDark overflow-hidden relative">
+                        <div 
+                          className="bg-gradient-to-r from-primary to-success h-full transition-all duration-300"
+                          style={{ width: `${gestationInfo.percentage}%` }}
+                        ></div>
+                      </div>
+                      
+                      <div className="grid grid-cols-3 text-center text-[11px] text-textSecondary bg-sidebar/50 p-2.5 rounded-lg border border-borderDark/50 mt-1">
+                        <div>
+                          <p className="text-[9px] uppercase tracking-widest font-semibold">Days Elapsed</p>
+                          <h4 className="text-sm font-bold text-textPrimary mt-0.5">{gestationInfo.elapsedDays} Days</h4>
+                        </div>
+                        <div className="border-x border-borderDark">
+                          <p className="text-[9px] uppercase tracking-widest font-semibold">Days Remaining</p>
+                          <h4 className="text-sm font-bold text-textPrimary mt-0.5">{gestationInfo.remainingDays} Days</h4>
+                        </div>
+                        <div>
+                          <p className="text-[9px] uppercase tracking-widest font-semibold">Current Week</p>
+                          <h4 className="text-sm font-bold text-textPrimary mt-0.5">Week {Math.ceil(gestationInfo.elapsedDays / 7)} of 16</h4>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 )}
-              </div>
-            </div>
 
-            {/* Section 5: Gestation Progress Visualizer */}
-            {selectedSow.status === 'Pregnant' && gestationInfo && (
-              <div className="bg-cardBg border border-borderDark rounded-lg p-5">
-                <div className="flex items-center justify-between mb-3.5 border-b border-borderDark/50 pb-2">
-                  <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 5: Gestation Progress Tracker (114 Days Cycle)</span>
-                  <span className="text-[9px] uppercase tracking-wider text-textSecondary">Gestation Timeline</span>
-                </div>
-                
-                <div className="flex flex-col gap-3">
-                  <div className="flex justify-between text-xs text-textSecondary">
-                    <span>Mating: <strong>{gestationInfo.serviceDate}</strong></span>
-                    <span className="text-primary font-bold">{gestationInfo.percentage}% Completed</span>
-                    <span>Due Target farrowing: <strong>{gestationInfo.expectedDate}</strong></span>
+                {/* Section 3: Heat Calendar & Cycle logs */}
+                <div className="bg-cardBg border border-borderDark rounded-lg p-5">
+                  <div className="flex items-center justify-between mb-3.5 border-b border-borderDark/50 pb-2">
+                    <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 3: Heat Cycle Log & Calendar</span>
+                    <span className="text-[9px] uppercase tracking-wider text-textSecondary">Every 21 days recurrence</span>
                   </div>
                   
-                  {/* Visual Progress Bar */}
-                  <div className="w-full bg-surface rounded-full h-3.5 border border-borderDark overflow-hidden relative">
-                    <div 
-                      className="bg-gradient-to-r from-primary to-success h-full transition-all duration-300"
-                      style={{ width: `${gestationInfo.percentage}%` }}
-                    ></div>
-                  </div>
-                  
-                  <div className="grid grid-cols-3 text-center text-[11px] text-textSecondary bg-sidebar/50 p-2.5 rounded-lg border border-borderDark/50 mt-1">
-                    <div>
-                      <p className="text-[9px] uppercase tracking-widest font-semibold">Days Elapsed</p>
-                      <h4 className="text-sm font-bold text-textPrimary mt-0.5">{gestationInfo.elapsedDays} Days</h4>
-                    </div>
-                    <div className="border-x border-borderDark">
-                      <p className="text-[9px] uppercase tracking-widest font-semibold">Days Remaining</p>
-                      <h4 className="text-sm font-bold text-textPrimary mt-0.5">{gestationInfo.remainingDays} Days</h4>
-                    </div>
-                    <div>
-                      <p className="text-[9px] uppercase tracking-widest font-semibold">Current Week</p>
-                      <h4 className="text-sm font-bold text-textPrimary mt-0.5">Week {Math.ceil(gestationInfo.elapsedDays / 7)} of 16</h4>
-                    </div>
+                  <div className="dense-table-container">
+                    <table className="dense-table">
+                      <thead>
+                        <tr>
+                          <th>Heat Cycle</th>
+                          <th>Observed Date</th>
+                          <th>Duration Limit</th>
+                          <th>Expected Next Heat</th>
+                          <th>Technician</th>
+                          <th>Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedSow.heatHistory && selectedSow.heatHistory.length > 0 ? (
+                          [...selectedSow.heatHistory].reverse().map((h) => (
+                            <tr key={h._id}>
+                              <td className="font-extrabold text-primary font-mono">Cycle #{h.heatNumber}</td>
+                              <td className="font-mono">{formatDate(h.heatDate)}</td>
+                              <td className="font-mono font-semibold text-textPrimary">{h.durationHours} hours</td>
+                              <td className="font-mono text-warning font-semibold">{formatDate(h.expectedNextHeat)}</td>
+                              <td className="font-semibold text-textSecondary">{h.enteredBy}</td>
+                              <td className="italic text-textSecondary">{h.notes || '-'}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={6} className="py-4 text-center text-textSecondary italic">
+                              No heat cycle records observed for this open breeder.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
-              </div>
+
+                {/* Section 4: Mating & Breeding Service Records */}
+                <div className="bg-cardBg border border-borderDark rounded-lg p-5">
+                  <div className="flex items-center justify-between mb-3.5 border-b border-borderDark/50 pb-2">
+                    <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 4: Mating & Breeding Service Records</span>
+                    <span className="text-[9px] uppercase tracking-wider text-textSecondary">Sow and Boar Mating History</span>
+                  </div>
+                  
+                  <div className="dense-table-container">
+                    <table className="dense-table">
+                      <thead>
+                        <tr>
+                          <th>Service Date</th>
+                          <th>Breeding Ready Boar</th>
+                          <th>Mating Type</th>
+                          <th>Ultrasound Confirmation</th>
+                          <th>Expected Farrowing</th>
+                          <th>Technician</th>
+                          <th>Remarks</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedSow.breedingHistory && selectedSow.breedingHistory.length > 0 ? (
+                          [...selectedSow.breedingHistory].reverse().map((b) => (
+                            <tr key={b._id}>
+                              <td className="font-mono">{formatDate(b.serviceDate)}</td>
+                              <td className="font-extrabold text-primary font-mono">{b.boarAnimalNo}</td>
+                              <td>
+                                <span className="badge-info">{b.matingType}</span>
+                              </td>
+                              <td>
+                                <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
+                                  b.pregnancyConfirmed === 'Confirmed' ? 'bg-success/20 text-success' :
+                                  b.pregnancyConfirmed === 'Pending' ? 'bg-warning/20 text-warning' : 'bg-danger/20 text-danger'
+                                }`}>{b.pregnancyConfirmed}</span>
+                              </td>
+                              <td className="font-mono text-success font-semibold">
+                                {formatDateOptional(b.expectedFarrowingDate)}
+                              </td>
+                              <td className="font-semibold text-textSecondary">{b.technician}</td>
+                              <td className="italic text-textSecondary">{b.notes || '-'}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={7} className="py-4 text-center text-textSecondary italic">
+                              No mating records registered for this breeding sow.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Section 6: Parity Farrowing outcome details */}
+                <div className="bg-cardBg border border-borderDark rounded-lg p-5">
+                  <div className="flex items-center justify-between mb-3.5 border-b border-borderDark/50 pb-2">
+                    <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 6: Lifetime Farrowing Registry & Litter Outcome</span>
+                    <span className="text-[9px] uppercase tracking-wider text-textSecondary">Reproductive Records</span>
+                  </div>
+                  
+                  <div className="dense-table-container">
+                    <table className="dense-table">
+                      <thead>
+                        <tr>
+                          <th>Parity</th>
+                          <th>Farrowing Date</th>
+                          <th>Born Alive</th>
+                          <th>Born Dead</th>
+                          <th>Stillborn</th>
+                          <th>Mummified</th>
+                          <th>Litter Weight</th>
+                          <th>Weaned Count</th>
+                          <th>Weaning Weight</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedSow.farrowingHistory && selectedSow.farrowingHistory.length > 0 ? (
+                          [...selectedSow.farrowingHistory].reverse().map((f) => (
+                            <tr key={f._id}>
+                              <td className="font-extrabold text-primary font-mono">Parity #{f.parity}</td>
+                              <td className="font-mono">{formatDate(f.farrowingDate)}</td>
+                              <td className="font-bold text-success font-mono">{f.bornAlive} piglets</td>
+                              <td className="font-mono text-danger">{f.bornDead}</td>
+                              <td className="font-mono text-danger">{f.stillborn}</td>
+                              <td className="font-mono text-textSecondary">{f.mummified}</td>
+                              <td className="font-mono font-bold text-textPrimary">{f.litterWeight || 0} kg</td>
+                              <td className="font-bold text-blueAccent font-mono">{f.weaningCount} weaned</td>
+                              <td className="font-mono font-semibold text-textPrimary">{f.weaningWeight || 0} kg</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={9} className="py-4 text-center text-textSecondary italic">
+                              No breeding farrow logs completed. Open gilt state.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
             )}
-
-            {/* Section 3: Heat Calendar & Cycle logs */}
-            <div className="bg-cardBg border border-borderDark rounded-lg p-5">
-              <div className="flex items-center justify-between mb-3.5 border-b border-borderDark/50 pb-2">
-                <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 3: Heat Cycle Log & Calendar</span>
-                <span className="text-[9px] uppercase tracking-wider text-textSecondary">Every 21 days recurrence</span>
-              </div>
-              
-              <div className="dense-table-container">
-                <table className="dense-table">
-                  <thead>
-                    <tr>
-                      <th>Heat Cycle</th>
-                      <th>Observed Date</th>
-                      <th>Duration Limit</th>
-                      <th>Expected Next Heat</th>
-                      <th>Technician</th>
-                      <th>Notes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedSow.heatHistory && selectedSow.heatHistory.length > 0 ? (
-                      [...selectedSow.heatHistory].reverse().map((h) => (
-                        <tr key={h._id}>
-                          <td className="font-extrabold text-primary font-mono">Cycle #{h.heatNumber}</td>
-                          <td className="font-mono">{new Date(h.heatDate).toLocaleDateString()}</td>
-                          <td className="font-mono font-semibold text-textPrimary">{h.durationHours} hours</td>
-                          <td className="font-mono text-warning font-semibold">{new Date(h.expectedNextHeat).toLocaleDateString()}</td>
-                          <td className="font-semibold text-textSecondary">{h.enteredBy}</td>
-                          <td className="italic text-textSecondary">{h.notes || '-'}</td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={6} className="py-4 text-center text-textSecondary italic">
-                          No heat cycle records observed for this open breeder.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Section 4: Mating & Breeding Service Records */}
-            <div className="bg-cardBg border border-borderDark rounded-lg p-5">
-              <div className="flex items-center justify-between mb-3.5 border-b border-borderDark/50 pb-2">
-                <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 4: Mating & Breeding Service Records</span>
-                <span className="text-[9px] uppercase tracking-wider text-textSecondary">Sow and Boar Mating History</span>
-              </div>
-              
-              <div className="dense-table-container">
-                <table className="dense-table">
-                  <thead>
-                    <tr>
-                      <th>Service Date</th>
-                      <th>Breeding Ready Boar</th>
-                      <th>Mating Type</th>
-                      <th>Ultrasound Confirmation</th>
-                      <th>Expected Farrowing</th>
-                      <th>Technician</th>
-                      <th>Remarks</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedSow.breedingHistory && selectedSow.breedingHistory.length > 0 ? (
-                      [...selectedSow.breedingHistory].reverse().map((b) => (
-                        <tr key={b._id}>
-                          <td className="font-mono">{new Date(b.serviceDate).toLocaleDateString()}</td>
-                          <td className="font-extrabold text-primary font-mono">{b.boarAnimalNo}</td>
-                          <td>
-                            <span className="badge-info">{b.matingType}</span>
-                          </td>
-                          <td>
-                            <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
-                              b.pregnancyConfirmed === 'Confirmed' ? 'bg-success/20 text-success' :
-                              b.pregnancyConfirmed === 'Pending' ? 'bg-warning/20 text-warning' : 'bg-danger/20 text-danger'
-                            }`}>{b.pregnancyConfirmed}</span>
-                          </td>
-                          <td className="font-mono text-success font-semibold">
-                            {b.expectedFarrowingDate ? new Date(b.expectedFarrowingDate).toLocaleDateString() : '-'}
-                          </td>
-                          <td className="font-semibold text-textSecondary">{b.technician}</td>
-                          <td className="italic text-textSecondary">{b.notes || '-'}</td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={7} className="py-4 text-center text-textSecondary italic">
-                          No mating records registered for this breeding sow.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Section 6: Parity Farrowing outcome details */}
-            <div className="bg-cardBg border border-borderDark rounded-lg p-5">
-              <div className="flex items-center justify-between mb-3.5 border-b border-borderDark/50 pb-2">
-                <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 6: Lifetime Farrowing Registry & Litter Outcome</span>
-                <span className="text-[9px] uppercase tracking-wider text-textSecondary">Reproductive Records</span>
-              </div>
-              
-              <div className="dense-table-container">
-                <table className="dense-table">
-                  <thead>
-                    <tr>
-                      <th>Parity</th>
-                      <th>Farrowing Date</th>
-                      <th>Born Alive</th>
-                      <th>Born Dead</th>
-                      <th>Stillborn</th>
-                      <th>Mummified</th>
-                      <th>Litter Weight</th>
-                      <th>Weaned Count</th>
-                      <th>Weaning Weight</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedSow.farrowingHistory && selectedSow.farrowingHistory.length > 0 ? (
-                      [...selectedSow.farrowingHistory].reverse().map((f) => (
-                        <tr key={f._id}>
-                          <td className="font-extrabold text-primary font-mono">Parity #{f.parity}</td>
-                          <td className="font-mono">{new Date(f.farrowingDate).toLocaleDateString()}</td>
-                          <td className="font-bold text-success font-mono">{f.bornAlive} piglets</td>
-                          <td className="font-mono text-danger">{f.bornDead}</td>
-                          <td className="font-mono text-danger">{f.stillborn}</td>
-                          <td className="font-mono text-textSecondary">{f.mummified}</td>
-                          <td className="font-mono font-bold text-textPrimary">{f.litterWeight || 0} kg</td>
-                          <td className="font-bold text-blueAccent font-mono">{f.weaningCount} weaned</td>
-                          <td className="font-mono font-semibold text-textPrimary">{f.weaningWeight || 0} kg</td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={9} className="py-4 text-center text-textSecondary italic">
-                          No breeding farrow logs completed. Open gilt state.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
 
             {/* Section 8: Health & Veterinary Treatment Ledger */}
             <div className="bg-cardBg border border-borderDark rounded-lg p-5">
@@ -1018,7 +1070,7 @@ export default function SowDetailPage() {
                     {selectedSow.treatmentHistory && selectedSow.treatmentHistory.length > 0 ? (
                       [...selectedSow.treatmentHistory].reverse().map((t) => (
                         <tr key={t._id}>
-                          <td className="font-mono">{new Date(t.treatmentDate).toLocaleDateString()}</td>
+                          <td className="font-mono">{formatDate(t.treatmentDate)}</td>
                           <td className="text-textPrimary">{t.symptoms}</td>
                           <td className="font-bold text-textPrimary">{t.diagnosis}</td>
                           <td className="font-mono text-primary font-bold">{t.medicineUsed || '-'}</td>
@@ -1066,7 +1118,7 @@ export default function SowDetailPage() {
                 </div>
                 <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
                   <span className="text-textSecondary font-medium">DOB / Age</span>
-                  <span className="font-bold text-textPrimary">{new Date(selectedSow.dob).toLocaleDateString()} ({ageInMonths} Mo)</span>
+                  <span className="font-bold text-textPrimary">{formatDate(selectedSow.dob)} ({ageInMonths} Mo)</span>
                 </div>
                 <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
                   <span className="text-textSecondary font-medium">Pen Unit Location</span>
@@ -1106,7 +1158,7 @@ export default function SowDetailPage() {
             </div>
 
             {/* Section 7: Weaning Performance & Litter Efficiency */}
-            {litterMetrics && (
+            {selectedSow.purpose !== 'Fattening' && (
               <div className="bg-cardBg border border-borderDark rounded-lg p-5">
                 <div className="flex items-center justify-between mb-3.5 border-b border-borderDark/50 pb-2">
                   <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 7: Weaning & Litter Efficiency</span>
@@ -1118,6 +1170,25 @@ export default function SowDetailPage() {
                     <span className="text-[9px] text-textSecondary uppercase tracking-widest font-black">Weaning Survival Rate</span>
                     <h3 className="text-2xl font-black text-success mt-1">{litterMetrics.weaningSurvivalRate}%</h3>
                     <p className="text-[9px] text-textSecondary mt-0.5">Weaned: {litterMetrics.totalWeaned} / Born Alive: {litterMetrics.totalBornAlive}</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-center">
+                    <div className="bg-sidebar/40 border border-borderDark/60 rounded p-2">
+                      <span className="text-[8px] text-textSecondary uppercase tracking-widest font-bold">Total Litters</span>
+                      <h4 className="text-xs font-black text-textPrimary mt-0.5">{(selectedSow.farrowingHistory || []).length} litters</h4>
+                    </div>
+                    <div className="bg-sidebar/40 border border-borderDark/60 rounded p-2">
+                      <span className="text-[8px] text-textSecondary uppercase tracking-widest font-bold">Total Born</span>
+                      <h4 className="text-xs font-black text-textPrimary mt-0.5">{litterMetrics.totalBornAlive} piglets</h4>
+                    </div>
+                    <div className="bg-sidebar/40 border border-borderDark/60 rounded p-2">
+                      <span className="text-[8px] text-textSecondary uppercase tracking-widest font-bold">Total Weaned</span>
+                      <h4 className="text-xs font-black text-textPrimary mt-0.5">{litterMetrics.totalWeaned} piglets</h4>
+                    </div>
+                    <div className="bg-sidebar/40 border border-borderDark/60 rounded p-2">
+                      <span className="text-[8px] text-textSecondary uppercase tracking-widest font-bold">Survival Rate</span>
+                      <h4 className="text-xs font-black text-textPrimary mt-0.5">{litterMetrics.weaningSurvivalRate}%</h4>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 text-center">
@@ -1157,7 +1228,7 @@ export default function SowDetailPage() {
                             {s.previousStatus || 'N/A'} &rarr; {s.newStatus}
                           </span>
                           <span className="text-[9px] text-textSecondary font-mono font-normal">
-                            {new Date(s.updatedAt || s.changeDate).toLocaleDateString()}
+                            {formatDate(s.updatedAt || s.changeDate)}
                           </span>
                         </div>
                         <p className="text-[10px] text-textSecondary mt-0.5 italic">"{s.notes || '-'}"</p>
@@ -1218,63 +1289,68 @@ export default function SowDetailPage() {
               <tbody>
                 {(() => {
                   const events = [];
-
                   // 1. Heat Events
-                  (selectedSow.heatHistory || []).forEach(h => {
-                    events.push({
-                      date: new Date(h.heatDate),
-                      dateStr: new Date(h.heatDate).toLocaleDateString(),
-                      type: 'HEAT',
-                      cycle: `Heat Cycle #${h.heatNumber}`,
-                      details: `Duration: ${h.durationHours}h • Next expected: ${new Date(h.expectedNextHeat).toLocaleDateString()}`,
-                      outcome: h.status || 'In Heat',
-                      enteredBy: h.enteredBy || '-',
-                      notes: h.notes || '-',
-                      dotColor: 'bg-primary',
-                      labelColor: 'text-primary bg-primary/10 border-primary/20',
-                      label: '🔥 HEAT'
+                  if (selectedSow.purpose !== 'Fattening') {
+                    (selectedSow.heatHistory || []).forEach(h => {
+                      events.push({
+                        date: new Date(h.heatDate),
+                        dateStr: formatDate(h.heatDate),
+                        type: 'HEAT',
+                        cycle: `Heat Cycle #${h.heatNumber}`,
+                        details: `Duration: ${h.durationHours}h • Next expected: ${formatDate(h.expectedNextHeat)}`,
+                        outcome: h.status || 'In Heat',
+                        enteredBy: h.enteredBy || '-',
+                        notes: h.notes || '-',
+                        dotColor: 'bg-primary',
+                        labelColor: 'text-primary bg-primary/10 border-primary/20',
+                        label: '🔥 HEAT'
+                      });
                     });
-                  });
+                  }
 
                   // 2. Mating / Breeding Events
-                  (selectedSow.breedingHistory || []).forEach((b, idx) => {
-                    events.push({
-                      date: new Date(b.serviceDate),
-                      dateStr: new Date(b.serviceDate).toLocaleDateString(),
-                      type: 'MATING',
-                      cycle: `Mating Service`,
-                      details: `Boar: ${b.boarAnimalNo} • Method: ${b.matingType} • Est. Farrowing: ${b.expectedFarrowingDate ? new Date(b.expectedFarrowingDate).toLocaleDateString() : '-'}`,
-                      outcome: b.pregnancyConfirmed || 'Pending',
-                      enteredBy: b.technician || '-',
-                      notes: b.notes || '-',
-                      dotColor: 'bg-blueAccent',
-                      labelColor: 'text-blueAccent bg-blueAccent/10 border-blueAccent/20',
-                      label: '💑 MATING'
+                  if (selectedSow.purpose !== 'Fattening') {
+                    (selectedSow.breedingHistory || []).forEach((b, idx) => {
+                      events.push({
+                        date: new Date(b.serviceDate),
+                        dateStr: formatDate(b.serviceDate),
+                        type: 'MATING',
+                        cycle: `Mating Service`,
+                        details: `Boar: ${b.boarAnimalNo} • Method: ${b.matingType} • Est. Farrowing: ${formatDateOptional(b.expectedFarrowingDate)}`,
+                        outcome: b.pregnancyConfirmed || 'Pending',
+                        enteredBy: b.technician || '-',
+                        notes: b.notes || '-',
+                        dotColor: 'bg-blueAccent',
+                        labelColor: 'text-blueAccent bg-blueAccent/10 border-blueAccent/20',
+                        label: '💑 MATING'
+                      });
                     });
-                  });
+                  }
 
                   // 3. Farrowing Events
-                  (selectedSow.farrowingHistory || []).forEach(f => {
-                    events.push({
-                      date: new Date(f.farrowingDate),
-                      dateStr: new Date(f.farrowingDate).toLocaleDateString(),
-                      type: 'FARROWING',
-                      cycle: `Parity #${f.parity} Farrowing`,
-                      details: `Born Alive: ${f.bornAlive} • Born Dead: ${f.bornDead} • Litter Wt: ${f.litterWeight || 0}kg • Weaned: ${f.weaningCount}`,
-                      outcome: `${f.bornAlive} Piglets`,
-                      enteredBy: f.enteredBy || 'System',
-                      notes: f.mummified > 0 ? `${f.mummified} mummified` : (f.weakPiglets > 0 ? `${f.weakPiglets} weak piglets noted` : 'Normal birth outcome'),
-                      dotColor: 'bg-success',
-                      labelColor: 'text-success bg-success/10 border-success/20',
-                      label: '🐖 FARROWING'
+                  if (selectedSow.purpose !== 'Fattening') {
+                    (selectedSow.farrowingHistory || []).forEach(f => {
+                      events.push({
+                        date: new Date(f.farrowingDate),
+                        dateStr: formatDate(f.farrowingDate),
+                        type: 'FARROWING',
+                        cycle: `Parity #${f.parity} Farrowing`,
+                        details: `Born Alive: ${f.bornAlive} • Born Dead: ${f.bornDead} • Litter Wt: ${f.litterWeight || 0}kg • Weaned: ${f.weaningCount}`,
+                        outcome: `${f.bornAlive} Piglets`,
+                        enteredBy: f.enteredBy || 'System',
+                        notes: f.mummified > 0 ? `${f.mummified} mummified` : (f.weakPiglets > 0 ? `${f.weakPiglets} weak piglets noted` : 'Normal birth outcome'),
+                        dotColor: 'bg-success',
+                        labelColor: 'text-success bg-success/10 border-success/20',
+                        label: '🐖 FARROWING'
+                      });
                     });
-                  });
+                  }
 
                   // 4. Treatment Events
                   (selectedSow.treatmentHistory || []).forEach(t => {
                     events.push({
                       date: new Date(t.treatmentDate),
-                      dateStr: new Date(t.treatmentDate).toLocaleDateString(),
+                      dateStr: formatDate(t.treatmentDate),
                       type: 'TREATMENT',
                       cycle: `Vet Treatment`,
                       details: `Symptoms: ${t.symptoms} • Dx: ${t.diagnosis} • Medicine: ${t.medicineUsed || '-'}`,
@@ -1291,7 +1367,7 @@ export default function SowDetailPage() {
                   (selectedSow.statusHistory || []).filter(s => s.previousStatus && s.previousStatus !== 'None').forEach(s => {
                     events.push({
                       date: new Date(s.updatedAt || s.changeDate),
-                      dateStr: new Date(s.updatedAt || s.changeDate).toLocaleDateString(),
+                      dateStr: formatDate(s.updatedAt || s.changeDate),
                       type: 'STATUS',
                       cycle: `Status Transition`,
                       details: `${s.previousStatus} → ${s.newStatus}`,
@@ -1966,7 +2042,53 @@ export default function SowDetailPage() {
           </form>
         </Modal>
 
+        {/* ==============================================
+            MODAL 8: MOVE TO FATTENING (RETIREMENT)
+            ============================================== */}
+        <Modal
+          isOpen={isFatteningOpen}
+          onClose={() => setIsFatteningOpen(false)}
+          title={`Retire Sow ${selectedSow.animalNo} to Fattening`}
+          footer={
+            <>
+              <button 
+                onClick={() => setIsFatteningOpen(false)}
+                className="px-4 py-2 hover:bg-cardBg border border-borderDark text-textSecondary text-xs rounded uppercase font-bold"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleFatteningSubmit}
+                className="px-4 py-2 bg-warning hover:bg-warning/80 text-black text-xs rounded uppercase font-bold shadow-md"
+              >
+                Confirm Retirement
+              </button>
+            </>
+          }
+        >
+          <form className="flex flex-col gap-4 text-xs">
+            {formError && (
+              <div className="bg-danger/10 border border-danger/25 p-3 rounded text-danger font-medium text-[11px]">
+                {formError}
+              </div>
+            )}
+            <FormSection title="Retirement Reason">
+              <FormField label="Reason for moving to Fattening" required>
+                <textarea
+                  rows={3}
+                  placeholder="e.g. Old age, low fertility, repeated failed conception..."
+                  value={fatteningReason}
+                  onChange={(e) => setFatteningReason(e.target.value)}
+                  className="dense-input w-full p-2"
+                  required
+                />
+              </FormField>
+            </FormSection>
+          </form>
+        </Modal>
+
       </div>
     </MainLayout>
   );
 }
+
