@@ -27,7 +27,8 @@ import {
   ChevronUp,
   ChevronDown,
   Skull,
-  HelpCircle
+  HelpCircle,
+  ClipboardList
 } from 'lucide-react';
 
 export default function PigletDetailPage() {
@@ -370,7 +371,9 @@ export default function PigletDetailPage() {
     return sortOrder === 'asc' ? <ChevronUp className="w-3 h-3 inline" /> : <ChevronDown className="w-3 h-3 inline" />;
   };
 
-  if (loading || !selectedPiglet) {
+  const isFetching = loading || (!selectedPiglet && !error) || (selectedPiglet && selectedPiglet._id !== id && selectedPiglet.animalNo !== id && !error);
+
+  if (isFetching) {
     return (
       <MainLayout>
         <div className="flex flex-col items-center justify-center py-20 text-xs text-textSecondary gap-3 animate-pulse">
@@ -381,7 +384,27 @@ export default function PigletDetailPage() {
     );
   }
 
-  const isWeanedOrDead = selectedPiglet.status === 'Pending Profile Completion' || selectedPiglet.status === 'Dead' || selectedPiglet.status === 'Sold';
+  if (error || !selectedPiglet) {
+    return (
+      <MainLayout>
+        <div className="max-w-md mx-auto w-full py-12 text-center my-8 bg-cardBg border border-borderDark rounded-lg p-6 flex flex-col items-center">
+          <div className="w-12 h-12 rounded-full bg-danger/10 border border-danger/30 flex items-center justify-center text-danger mb-4">
+            <AlertCircle className="w-5 h-5" />
+          </div>
+          <h2 className="text-sm font-black uppercase tracking-widest text-danger mb-2">Record Sync Error</h2>
+          <p className="text-xs text-textSecondary">{error || 'The piglet profile could not be located. It may have been deleted or the ID is invalid.'}</p>
+          <button
+            onClick={() => navigate('/piglets')}
+            className="px-4 py-2 bg-sidebar text-xs text-textPrimary hover:bg-cardBg hover:text-primary rounded border border-borderDark uppercase tracking-wider font-bold mt-4"
+          >
+            Back to Piglet Registry
+          </button>
+        </div>
+      </MainLayout>
+    );
+  }
+
+  const isWeanedOrDead = selectedPiglet.status === 'Pending Profile Completion' || selectedPiglet.status === 'Dead' || selectedPiglet.status === 'Sold' || selectedPiglet.status === 'Weaned' || selectedPiglet.status === 'Promoted';
 
   return (
     <MainLayout>

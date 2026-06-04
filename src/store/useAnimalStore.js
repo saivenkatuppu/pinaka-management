@@ -170,6 +170,13 @@ export const useAnimalStore = create((set, get) => ({
         throw new Error('Animal Type "Piglet" must be Male or Female.');
       }
 
+      let initialOperationalStatus = 'Active';
+      if (data.source === 'Purchased' || data.source === 'Imported') {
+        if (data.vitaminInjectionStatus === 'Unknown' || data.teethCuttingStatus === 'Unknown' || data.weaningStatus === 'Unknown') {
+          initialOperationalStatus = 'Under Observation';
+        }
+      }
+
       const newRecord = {
         _id: `ani_${Date.now()}`,
         ...data,
@@ -179,8 +186,12 @@ export const useAnimalStore = create((set, get) => ({
         purpose: data.purpose || 'Pending',
         castrationStatus: data.castrationStatus || 'N/A',
         moduleAssignment: data.moduleAssignment || finalResolvedType,
-        operationalStatus: 'Active',
+        operationalStatus: initialOperationalStatus,
         currentWeight: Number(data.currentWeight || 0),
+        currentAge: data.currentAge ? Number(data.currentAge) : undefined,
+        vitaminInjectionStatus: (data.source === 'Purchased' || data.source === 'Imported') ? (data.vitaminInjectionStatus || 'N/A') : 'N/A',
+        teethCuttingStatus: (data.source === 'Purchased' || data.source === 'Imported') ? (data.teethCuttingStatus || 'N/A') : 'N/A',
+        weaningStatus: (data.source === 'Purchased' || data.source === 'Imported') ? (data.weaningStatus || 'N/A') : 'N/A',
         createdAt: new Date().toISOString(),
         isDeleted: false
       };
@@ -292,6 +303,7 @@ export const useAnimalStore = create((set, get) => ({
               latestWeight: Number(newRecord.currentWeight || 1.5),
               penNo: newRecord.currentPen || 'Unassigned',
               status: 'Active',
+              weaningStatus: newRecord.weaningStatus === 'Already Weaned' ? 'Weaned' : 'Pending',
               notes: `Synced from Animal Registry on ${new Date().toLocaleDateString()}.`,
               isDeleted: false,
               createdAt: new Date().toISOString(),
@@ -348,6 +360,20 @@ export const useAnimalStore = create((set, get) => ({
             throw new Error('Animal Type "Piglet" must be Male or Female.');
           }
 
+          let updatedOperationalStatus = a.operationalStatus;
+          const mergedSource = updateData.source || a.source;
+          const mergedVitamin = updateData.vitaminInjectionStatus || a.vitaminInjectionStatus;
+          const mergedTeeth = updateData.teethCuttingStatus || a.teethCuttingStatus;
+          const mergedWeaning = updateData.weaningStatus || a.weaningStatus;
+
+          if (mergedSource === 'Purchased' || mergedSource === 'Imported') {
+            if (mergedVitamin === 'Unknown' || mergedTeeth === 'Unknown' || mergedWeaning === 'Unknown') {
+              updatedOperationalStatus = 'Under Observation';
+            } else if (a.operationalStatus === 'Under Observation') {
+              updatedOperationalStatus = 'Active';
+            }
+          }
+
           return { 
             ...a, 
             ...updateData,
@@ -355,7 +381,11 @@ export const useAnimalStore = create((set, get) => ({
             currentWeight: updateData.currentWeight !== undefined ? Number(updateData.currentWeight || 0) : Number(a.currentWeight || 0),
             animalType: resolvedType,
             lifecycleStage: resolvedType,
-            moduleAssignment: resolvedType
+            moduleAssignment: resolvedType,
+            operationalStatus: updatedOperationalStatus,
+            vitaminInjectionStatus: (mergedSource === 'Purchased' || mergedSource === 'Imported') ? (mergedVitamin || 'N/A') : 'N/A',
+            teethCuttingStatus: (mergedSource === 'Purchased' || mergedSource === 'Imported') ? (mergedTeeth || 'N/A') : 'N/A',
+            weaningStatus: (mergedSource === 'Purchased' || mergedSource === 'Imported') ? (mergedWeaning || 'N/A') : 'N/A',
           };
         }
         return a;
@@ -373,6 +403,9 @@ export const useAnimalStore = create((set, get) => ({
             let matchedSow = existingSows.find(s => s.animalNo === match.animalNo);
             if (matchedSow) {
               matchedSow.purpose = finalPurpose;
+              if (updateData.currentPen !== undefined) {
+                matchedSow.penNo = updateData.currentPen;
+              }
               if (finalPurpose === 'Fattening') {
                 matchedSow.status = 'Retired';
               }
@@ -419,6 +452,9 @@ export const useAnimalStore = create((set, get) => ({
             let matchedBoar = existingBoars.find(b => b.animalNo === match.animalNo);
             if (matchedBoar) {
               matchedBoar.purpose = finalPurpose;
+              if (updateData.currentPen !== undefined) {
+                matchedBoar.penNo = updateData.currentPen;
+              }
               if (finalPurpose === 'Fattening') {
                 matchedBoar.breedingStatus = 'Retired';
               }
@@ -464,6 +500,15 @@ export const useAnimalStore = create((set, get) => ({
                 }]
               };
               localStorage.setItem('pinaka_boars', JSON.stringify([boarEntry, ...existingBoars]));
+            }
+          } else if (match.animalType === 'Piglet' || match.animalType === 'Grower') {
+            const existingPiglets = JSON.parse(localStorage.getItem('pinaka_piglets') || '[]');
+            let matchedPiglet = existingPiglets.find(p => p.animalNo === match.animalNo);
+            if (matchedPiglet) {
+              if (updateData.currentPen !== undefined) {
+                matchedPiglet.penNo = updateData.currentPen;
+                localStorage.setItem('pinaka_piglets', JSON.stringify(existingPiglets));
+              }
             }
           }
         }

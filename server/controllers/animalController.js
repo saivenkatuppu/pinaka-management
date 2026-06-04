@@ -52,7 +52,11 @@ export const registerAnimal = async (req, res, next) => {
       moduleAssignment,
       currentPen,
       operator,
-      notes 
+      notes,
+      currentAge,
+      vitaminInjectionStatus,
+      teethCuttingStatus,
+      weaningStatus
     } = req.body;
 
     const exists = await Animal.findOne({ animalNo });
@@ -76,6 +80,19 @@ export const registerAnimal = async (req, res, next) => {
       throw new Error('Animal Type "Piglet" must be Male or Female');
     }
 
+    if (!dob && !currentAge) {
+      res.status(400);
+      throw new Error('Either Date of Birth (DOB) or Current Age must be provided');
+    }
+
+    // Determine Operational Status based on unknown imported conditions
+    let initialOperationalStatus = 'Active';
+    if (source === 'Purchased' || source === 'Imported') {
+      if (vitaminInjectionStatus === 'Unknown' || teethCuttingStatus === 'Unknown' || weaningStatus === 'Unknown') {
+        initialOperationalStatus = 'Under Observation';
+      }
+    }
+
     const animal = await Animal.create({
       animalNo,
       earTag,
@@ -91,11 +108,15 @@ export const registerAnimal = async (req, res, next) => {
       castrationStatus: castrationStatus || 'N/A',
       moduleAssignment: moduleAssignment || (resolvedType === 'Grower' ? 'Piglet' : resolvedType),
       currentPen,
-      operationalStatus: 'Active',
+      operationalStatus: initialOperationalStatus,
       operator,
       notes,
       sireNo: req.body.sireNo || '',
-      damNo: req.body.damNo || ''
+      damNo: req.body.damNo || '',
+      currentAge,
+      vitaminInjectionStatus: (source === 'Purchased' || source === 'Imported') ? (vitaminInjectionStatus || 'N/A') : 'N/A',
+      teethCuttingStatus: (source === 'Purchased' || source === 'Imported') ? (teethCuttingStatus || 'N/A') : 'N/A',
+      weaningStatus: (source === 'Purchased' || source === 'Imported') ? (weaningStatus || 'N/A') : 'N/A'
     });
 
     if (resolvedType === 'Sow') {
@@ -146,7 +167,7 @@ export const registerAnimal = async (req, res, next) => {
         latestWeight: animal.currentWeight || 1.5,
         penNo: animal.currentPen || 'Unassigned',
         status: 'Active',
-        weaningStatus: 'Pending',
+        weaningStatus: weaningStatus === 'Already Weaned' ? 'Weaned' : 'Pending',
         notes: 'Auto-synced from Animal Registry.',
         createdBy: req.user?._id
       });

@@ -61,6 +61,7 @@ export default function BoarDetailPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const boarPubertyAge = useSettingsStore(state => state.lifecycle.boarPubertyAge) || 180;
+  const evaluateReadinessHelper = useSettingsStore(state => state.evaluateBreedingReadiness);
   const { 
     selectedBoar, 
     loading, 
@@ -165,6 +166,11 @@ export default function BoarDetailPage() {
   const ageInMonths = useMemo(() => {
     return Math.floor(ageInDays / 30);
   }, [ageInDays]);
+
+  const breedingReadiness = useMemo(() => {
+    if (!selectedBoar) return { isReady: false };
+    return evaluateReadinessHelper(selectedBoar);
+  }, [selectedBoar, evaluateReadinessHelper]);
 
   // Get simulated or actual service records
   const services = useMemo(() => {
@@ -455,6 +461,29 @@ export default function BoarDetailPage() {
   const isInactive = selectedBoar.status === 'Dead' || selectedBoar.status === 'Culled' || selectedBoar.status === 'Sold';
   const currentBStatus = selectedBoar.breedingStatus || 'Growing';
 
+  // Breeding status badge helper (defined here, also used in BoarRecord.jsx)
+  const getBreedingStatusBadge = (status) => {
+    const map = {
+      'Growing':        'text-info bg-info/10 border-info/20',
+      'Puberty Reached':'text-primary bg-primary/10 border-primary/20',
+      'Breeding Ready': 'text-success bg-success/10 border-success/20',
+      'Breeding Active':'text-success bg-success/15 border-success/30 font-black animate-pulse',
+      'Mating':         'text-success bg-success/15 border-success/30 font-black animate-pulse',
+      'Low Fertility':  'text-warning bg-warning/10 border-warning/20',
+      'Under Treatment':'text-danger bg-danger/10 border-danger/20',
+      'Retired':        'text-textSecondary bg-sidebar border-borderDark/60',
+      'Sold':           'text-textSecondary bg-sidebar border-borderDark/60',
+      'Dead':           'text-danger bg-danger/5 border-danger/10 line-through'
+    };
+    let display = status;
+    if (status === 'Breeding Active') display = 'Breeding Active';
+    return (
+      <span className={`text-[10px] px-2.5 py-0.5 rounded border font-bold uppercase tracking-wider ${map[status] || 'text-textSecondary bg-sidebar'}`}>
+        {display}
+      </span>
+    );
+  };
+
   return (
     <MainLayout>
       <div className="flex flex-col gap-5 w-full">
@@ -546,6 +575,29 @@ export default function BoarDetailPage() {
           </div>
         </div>
 
+        {/* Breeding Readiness Warning Banner */}
+        {selectedBoar.purpose !== 'Fattening' && selectedBoar.castrationStatus !== 'Castrated' && !breedingReadiness.isReady && (
+          <div className="bg-warning/10 border border-warning/40 p-3 rounded-lg text-xs flex items-center justify-between no-print text-warning">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4.5 h-4.5" />
+              <div>
+                <span className="font-extrabold uppercase tracking-wide">
+                  BOAR NOT BREEDING READY
+                </span>
+                <p className="text-[11px] opacity-90 mt-0.5">
+                  Age: {breedingReadiness.currentAgeDays} Days • Required Age: {breedingReadiness.requiredAgeDays} Days
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <span className="text-[9px] uppercase font-semibold">Eligibility In:</span>
+              <h4 className="text-sm font-black font-mono leading-none mt-0.5">
+                {breedingReadiness.daysRemaining} Day(s)
+              </h4>
+            </div>
+          </div>
+        )}
+
         {/* Notifications & Warning Alerts Center */}
         {alerts.length > 0 && (
           <div className="flex flex-col gap-2.5 no-print border border-borderDark p-3 rounded-lg bg-sidebar/55">
@@ -631,61 +683,124 @@ export default function BoarDetailPage() {
           
           {/* LEFT 2 COLUMNS: Profile, readiness panel, service logs, health ledger */}
           <div className="xl:col-span-2 flex flex-col gap-5">
-            
-            {/* Section 1: Boar Profile Overview details */}
+                {/* Section 1: Boar Profile Overview — 4 KPI stat cards + full details grid */}
             <div className="bg-cardBg border border-borderDark rounded-lg p-5">
               <div className="flex items-center justify-between border-b border-borderDark/50 pb-2 mb-4">
-                <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 1: Boar Profile & Reproductive Performance Overview</span>
+                <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 1: Boar Profile & Reproductive Overview</span>
                 <span className="text-[9px] text-textSecondary uppercase font-mono">Verified Ancestry</span>
               </div>
-              
+
+              {/* Top 4 KPI stat cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-sidebar/30 border border-borderDark/50 rounded p-3 text-center">
                   <p className="text-[9px] text-textSecondary uppercase font-bold tracking-wider">Breeding Status</p>
-                  <div className="mt-1">{getBreedingStatusBadge(currentBStatus)}</div>
+                  <div className="mt-1.5">{getBreedingStatusBadge(currentBStatus)}</div>
                 </div>
                 <div className="bg-sidebar/30 border border-borderDark/50 rounded p-3 text-center">
-                  <p className="text-[9px] text-textSecondary uppercase font-bold tracking-wider">Date of Puberty</p>
+                  <p className="text-[9px] text-textSecondary uppercase font-bold tracking-wider">Puberty Date</p>
                   <h4 className="text-xs font-black text-textPrimary mt-1.5">
-                    {selectedBoar.pubertyDate ? formatDate(selectedBoar.pubertyDate) : 'Pending'}
+                    {selectedBoar.pubertyDate ? formatDate(selectedBoar.pubertyDate) : <span className="text-textSecondary/50">Pending</span>}
                   </h4>
                   <p className="text-[8px] text-textSecondary mt-0.5 uppercase">Maturity Date</p>
                 </div>
                 <div className="bg-sidebar/30 border border-borderDark/50 rounded p-3 text-center">
                   <p className="text-[9px] text-textSecondary uppercase font-bold tracking-wider">Latest Weight</p>
-                  <h4 className="text-xs font-black text-success mt-1.5">{selectedBoar.latestWeight || selectedBoar.birthWeight} kg</h4>
-                  <p className="text-[8px] text-textSecondary mt-0.5 uppercase">Stable Weight</p>
+                  <h4 className="text-xs font-black text-success mt-1.5">{selectedBoar.latestWeight || selectedBoar.birthWeight || '—'} kg</h4>
+                  <p className="text-[8px] text-textSecondary mt-0.5 uppercase">Current Reading</p>
                 </div>
                 <div className="bg-sidebar/30 border border-borderDark/50 rounded p-3 text-center">
-                  <p className="text-[9px] text-textSecondary uppercase font-bold tracking-wider">Current Pen No</p>
-                  <h4 className="text-xs font-black text-primary mt-1.5 select-all uppercase">{selectedBoar.penNo}</h4>
+                  <p className="text-[9px] text-textSecondary uppercase font-bold tracking-wider">Current Pen</p>
+                  <h4 className="text-xs font-black text-primary mt-1.5 select-all uppercase">{selectedBoar.penNo || '—'}</h4>
                   <p className="text-[8px] text-textSecondary mt-0.5 uppercase">Location</p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-5 mt-4 border-t border-borderDark/50 pt-4 text-xs">
-                <div>
-                  <span className="text-[9px] text-textSecondary uppercase font-semibold block">Sire (Father ID)</span>
-                  <span className="font-bold text-textPrimary font-mono mt-0.5">{selectedBoar.sireNo}</span>
+              {/* Full identity detail grid (2 columns × rows) */}
+              <div className="mt-4 pt-4 border-t border-borderDark/50 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2.5 text-[11px]">
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Boar ID Tag</span>
+                  <span className="font-extrabold text-primary font-mono select-all">{selectedBoar.animalNo}</span>
                 </div>
-                <div>
-                  <span className="text-[9px] text-textSecondary uppercase font-semibold block">Dam (Mother ID)</span>
-                  <span className="font-bold text-textPrimary font-mono mt-0.5">{selectedBoar.damNo}</span>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Ear Tag</span>
+                  <span className="font-bold text-textPrimary font-mono">{selectedBoar.earTag || selectedBoar.animalNo}</span>
                 </div>
-                <div>
-                  <span className="text-[9px] text-textSecondary uppercase font-semibold block">Disease Test</span>
-                  <span className={`font-bold uppercase text-[10px] mt-0.5 ${selectedBoar.diseaseTestResult === 'Positive' ? 'text-danger' : 'text-success'}`}>
-                    {selectedBoar.diseaseTestResult || 'Negative'}
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Breed Type</span>
+                  <span className="font-bold text-textPrimary">{selectedBoar.breed || '—'}</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Date of Birth / Age</span>
+                  <span className="font-bold text-textPrimary">{formatDate(selectedBoar.dob)} <span className="text-textSecondary font-normal">({ageInMonths} Mo / {ageInDays}d)</span></span>
+                </div>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Sire Tag (Father)</span>
+                  <span className="font-semibold text-textPrimary font-mono">{selectedBoar.sireNo || 'UNKNOWN'}</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Dam Tag (Mother)</span>
+                  <span className="font-semibold text-textPrimary font-mono">{selectedBoar.damNo || 'UNKNOWN'}</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Birth Weight</span>
+                  <span className="font-semibold text-textPrimary font-mono">{selectedBoar.birthWeight || '—'} kg</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Source / Entry</span>
+                  <span className="font-bold uppercase text-[10px] text-blueAccent">
+                    {selectedBoar.source === 'GrowerPromotion' ? 'Grower Promotion'
+                     : selectedBoar.source === 'PigletPromotion' ? 'Piglet Promotion'
+                     : 'Direct Import'}
                   </span>
                 </div>
-                <div>
-                  <span className="text-[9px] text-textSecondary uppercase font-semibold block">Operational Status</span>
-                  <div className="mt-0.5"><StatusBadge status={selectedBoar.status} /></div>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Purpose</span>
+                  <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${
+                    (selectedBoar.purpose || 'Breeding') === 'Fattening'
+                      ? 'bg-warning/10 text-warning border-warning/20'
+                      : 'bg-blueAccent/10 text-blueAccent border-blueAccent/20'
+                  }`}>{selectedBoar.purpose || 'Breeding'}</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Castration Status</span>
+                  <span className={`font-bold text-[10px] uppercase ${
+                    selectedBoar.castrationStatus === 'Castrated' ? 'text-warning' : 'text-success'
+                  }`}>{selectedBoar.castrationStatus || 'Not Castrated'}</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Disease Test</span>
+                  <span className={`font-bold uppercase text-[10px] ${
+                    selectedBoar.diseaseTestResult === 'Positive' ? 'text-danger' : 'text-success'
+                  }`}>{selectedBoar.diseaseTestResult || 'Negative'}</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Rudimentary Teats</span>
+                  <span className="font-bold text-textPrimary font-mono">{selectedBoar.rudimentaryTeats ?? '—'} teats</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Congenital Defects</span>
+                  <span className={`font-bold text-[10px] uppercase ${
+                    selectedBoar.congenitalDefects && selectedBoar.congenitalDefects !== 'None' ? 'text-danger' : 'text-success'
+                  }`}>{selectedBoar.congenitalDefects || 'None'}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-textSecondary font-medium">Registered On</span>
+                  <span className="font-bold text-textPrimary font-mono">{formatDateOptional(selectedBoar.createdAt)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-textSecondary font-medium">Operational Status</span>
+                  <div className="flex items-center gap-1.5">
+                    <StatusBadge status={selectedBoar.status} />
+                    {canEdit && !isInactive && (
+                      <button
+                        onClick={handleOpenStatus}
+                        className="text-[9px] text-primary hover:underline font-bold uppercase ml-1"
+                      >Shift</button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
-
-            {/* Section 2 & 3: Maturity & Services */}
             {selectedBoar.purpose !== 'Fattening' && selectedBoar.castrationStatus !== 'Castrated' && (
               <>
                 {/* Section 2: Puberty & Breeding Readiness Management Action Panel */}
@@ -741,10 +856,11 @@ export default function BoarDetailPage() {
                             className="dense-input text-[10px]" 
                           />
                         </FormField>
-                        <button
+                        <button 
                           onClick={handleMarkBreedingReady}
-                          disabled={!selectedBoar.pubertyDate || selectedBoar.breedingReadyDate || isInactive}
-                          className="w-full py-1.5 bg-primary disabled:opacity-40 disabled:cursor-not-allowed text-black text-[10px] uppercase font-black tracking-wider rounded"
+                          disabled={!!selectedBoar.breedingReadyDate || !breedingReadiness.isReady}
+                          className="px-3 py-2 bg-primary text-black font-bold text-[10px] uppercase rounded border border-primary disabled:opacity-40"
+                          title={!breedingReadiness.isReady ? "Boar is not of breeding age yet." : ""}
                         >
                           {selectedBoar.breedingReadyDate ? 'Breeding Ready ✔' : 'Approve Ready'}
                         </button>
@@ -769,12 +885,13 @@ export default function BoarDetailPage() {
                             className="dense-input text-[10px]" 
                           />
                         </FormField>
-                        <button
+                        <button 
                           onClick={handleMarkActiveBreeder}
-                          disabled={!selectedBoar.breedingReadyDate || currentBStatus === 'Breeding Active' || isInactive}
-                          className="w-full py-1.5 bg-success disabled:opacity-40 disabled:cursor-not-allowed text-white text-[10px] uppercase font-bold tracking-wider rounded"
+                          disabled={selectedBoar.breedingStatus === 'Breeding Active' || !breedingReadiness.isReady}
+                          className="px-3 py-2 bg-success text-black font-bold text-[10px] uppercase rounded border border-success disabled:opacity-40"
+                          title={!breedingReadiness.isReady ? "Boar is not of breeding age yet." : ""}
                         >
-                          {currentBStatus === 'Breeding Active' ? 'Breeding Active ✔' : 'Activate Sire'}
+                          {selectedBoar.breedingStatus === 'Breeding Active' ? 'Active Breeder ✔' : 'Approve Active'}
                         </button>
                       </div>
                     </div>
@@ -957,9 +1074,87 @@ export default function BoarDetailPage() {
 
           </div>
 
-          {/* RIGHT 1 COLUMN: Fertility Analytics Dashboard, Status History, Breeder Notes */}
+          {/* RIGHT 1 COLUMN: Identity Index, Fertility Analytics Dashboard, Status History, Breeder Notes */}
           <div className="flex flex-col gap-5">
-            
+
+            {/* Boar Identity Index (Right sidebar card — mirrors Sow's Section 1 style) */}
+            <div className="bg-cardBg border border-borderDark rounded-lg p-5">
+              <div className="flex items-center justify-between mb-3.5 border-b border-borderDark/50 pb-2">
+                <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Boar Identity Index</span>
+                <span className="text-[9px] uppercase tracking-wider text-textSecondary">Lineage</span>
+              </div>
+
+              <div className="flex flex-col gap-2.5 text-[11px]">
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Boar ID Tag</span>
+                  <span className="font-extrabold text-primary font-mono select-all">{selectedBoar.animalNo}</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Breed</span>
+                  <span className="font-bold text-textPrimary">{selectedBoar.breed || '—'}</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">DOB / Age</span>
+                  <span className="font-bold text-textPrimary">{formatDate(selectedBoar.dob)} <span className="text-textSecondary font-normal">({ageInMonths} Mo)</span></span>
+                </div>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Pen Unit</span>
+                  <span className="font-bold text-textPrimary bg-sidebar border border-borderDark px-2 py-0.5 rounded font-mono">{selectedBoar.penNo || '—'}</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Latest Weight</span>
+                  <span className="font-extrabold text-success font-mono">{selectedBoar.latestWeight || selectedBoar.birthWeight || '—'} kg</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Birth Weight</span>
+                  <span className="font-semibold text-textPrimary font-mono">{selectedBoar.birthWeight || '—'} kg</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Sire Tag (Father)</span>
+                  <span className="font-semibold text-textPrimary font-mono">{selectedBoar.sireNo || 'UNKNOWN'}</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Dam Tag (Mother)</span>
+                  <span className="font-semibold text-textPrimary font-mono">{selectedBoar.damNo || 'UNKNOWN'}</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Source / Entry</span>
+                  <span className="font-bold uppercase text-[10px] text-blueAccent">
+                    {selectedBoar.source === 'GrowerPromotion' ? 'Grower Promotion'
+                     : selectedBoar.source === 'PigletPromotion' ? 'Piglet Promotion'
+                     : 'Direct Import'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Purpose</span>
+                  <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${
+                    (selectedBoar.purpose || 'Breeding') === 'Fattening'
+                      ? 'bg-warning/10 text-warning border-warning/20'
+                      : 'bg-blueAccent/10 text-blueAccent border-blueAccent/20'
+                  }`}>{selectedBoar.purpose || 'Breeding'}</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Castration</span>
+                  <span className={`font-bold text-[10px] uppercase ${
+                    selectedBoar.castrationStatus === 'Castrated' ? 'text-warning' : 'text-success'
+                  }`}>{selectedBoar.castrationStatus || 'Not Castrated'}</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-borderDark/20 pb-1.5">
+                  <span className="text-textSecondary font-medium">Breeding Status</span>
+                  <div>{getBreedingStatusBadge(currentBStatus)}</div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-textSecondary font-medium">Operational Status</span>
+                  <div className="flex items-center gap-1">
+                    <StatusBadge status={selectedBoar.status} />
+                    {canEdit && !isInactive && (
+                      <button onClick={handleOpenStatus} className="text-[9px] text-primary hover:underline font-bold uppercase ml-1">Shift</button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Section 4: Fertility Analytics Dashboard */}
             {selectedBoar.purpose !== 'Fattening' && selectedBoar.castrationStatus !== 'Castrated' && (
               <div className="bg-cardBg border border-borderDark rounded-lg p-5">

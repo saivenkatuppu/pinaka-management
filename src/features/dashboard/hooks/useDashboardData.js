@@ -129,15 +129,15 @@ export function useDashboardData() {
       }
     });
 
-    // Pregnancy Check (21 days)
+    // Pregnancy Check
     breedings.forEach(b => {
       if (b.pregnancyResult === 'Pending' && b.pregnancyCheckDate) {
         const diff = (new Date(b.pregnancyCheckDate) - today) / (1000 * 60 * 60 * 24);
         if (diff <= 3 && diff >= -10) {
-          list.push({ type: 'info', title: 'Pregnancy Check', message: `Sow ${b.sowNo} is due for 21-day pregnancy check.`, date: b.pregnancyCheckDate });
+          list.push({ type: 'info', title: 'Pregnancy Check', message: `Sow ${b.sowNo} is due for ${lifecycle.pregnancyConfirmationPeriod}-day pregnancy check.`, date: b.pregnancyCheckDate });
         }
       }
-      // Farrowing (114 days)
+      // Farrowing
       if (b.pregnancyResult === 'Pregnant Confirmed' && b.expectedFarrowingDate) {
         const diff = (new Date(b.expectedFarrowingDate) - today) / (1000 * 60 * 60 * 24);
         if (diff <= 7 && diff >= -3) {

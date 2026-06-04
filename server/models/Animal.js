@@ -12,7 +12,11 @@ const animalSchema = new mongoose.Schema({
   },
   dob: {
     type: mongoose.Schema.Types.Mixed,
-    required: true
+    required: false
+  },
+  currentAge: {
+    type: Number,
+    required: false
   },
   sex: {
     type: String,
@@ -74,6 +78,23 @@ const animalSchema = new mongoose.Schema({
   currentPen: {
     type: String,
     default: 'Unassigned'
+  },
+  
+  // Historical / Import Milestones
+  vitaminInjectionStatus: {
+    type: String,
+    enum: ['Completed', 'Pending', 'Unknown', 'N/A'],
+    default: 'N/A'
+  },
+  teethCuttingStatus: {
+    type: String,
+    enum: ['Completed', 'Pending', 'Unknown', 'N/A'],
+    default: 'N/A'
+  },
+  weaningStatus: {
+    type: String,
+    enum: ['Already Weaned', 'Not Weaned', 'Unknown', 'N/A'],
+    default: 'N/A'
   },
   
   // Operational Intelligence

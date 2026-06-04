@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import MainLayout from '../components/layout/MainLayout';
 import DatePicker from '../components/ui/DatePicker';
 import { useAnimalStore } from '../store/useAnimalStore';
+import { useFarmStructureStore } from '../store/useFarmStructureStore';
 import DataTable from '../components/ui/DataTable';
 import StatusBadge from '../components/ui/StatusBadge';
 import { TableSkeleton, CardSkeleton } from '../components/ui/LoadingSkeleton';
@@ -22,7 +23,8 @@ import {
 
 export default function AnimalStockRecord() {
   const navigate = useNavigate();
-  const { animals, loading, fetchAnimals, registerAnimal, updateAnimal } = useAnimalStore();
+  const { animals, loading: animalsLoading, fetchAnimals, registerAnimal, updateAnimal } = useAnimalStore();
+  const { cells, fetchStructure } = useFarmStructureStore();
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [activeEditAnimal, setActiveEditAnimal] = useState(null);
@@ -44,12 +46,17 @@ export default function AnimalStockRecord() {
     damNo: '',
     parentUnknown: false,
     expectedWeaningDate: '',
-    lactationStatus: 'Lactating'
+    lactationStatus: 'Lactating',
+    currentAge: '',
+    vitaminInjectionStatus: 'N/A',
+    teethCuttingStatus: 'N/A',
+    weaningStatus: 'N/A'
   });
 
   useEffect(() => {
     fetchAnimals();
-  }, [fetchAnimals]);
+    fetchStructure();
+  }, [fetchAnimals, fetchStructure]);
 
   const kpis = useMemo(() => {
     const totalAnimals = animals.length;
@@ -181,7 +188,11 @@ export default function AnimalStockRecord() {
       damNo: '',
       parentUnknown: false,
       expectedWeaningDate: '',
-      lactationStatus: 'Lactating'
+      lactationStatus: 'Lactating',
+      currentAge: '',
+      vitaminInjectionStatus: 'N/A',
+      teethCuttingStatus: 'N/A',
+      weaningStatus: 'N/A'
     });
     setIsAddModalOpen(true);
   };
@@ -207,7 +218,11 @@ export default function AnimalStockRecord() {
       damNo: '',
       parentUnknown: false,
       expectedWeaningDate: '',
-      lactationStatus: 'Lactating'
+      lactationStatus: 'Lactating',
+      currentAge: '',
+      vitaminInjectionStatus: 'N/A',
+      teethCuttingStatus: 'N/A',
+      weaningStatus: 'N/A'
     });
   };
 
@@ -236,7 +251,11 @@ export default function AnimalStockRecord() {
       damNo: animal.damNo || '',
       parentUnknown: animal.parentUnknown !== undefined ? animal.parentUnknown : (!hasParents && animal.source !== 'Farm Born'),
       expectedWeaningDate: animal.expectedWeaningDate ? animal.expectedWeaningDate.split('T')[0] : '',
-      lactationStatus: animal.lactationStatus || 'Lactating'
+      lactationStatus: animal.lactationStatus || 'Lactating',
+      currentAge: animal.currentAge || '',
+      vitaminInjectionStatus: animal.vitaminInjectionStatus || 'N/A',
+      teethCuttingStatus: animal.teethCuttingStatus || 'N/A',
+      weaningStatus: animal.weaningStatus || 'N/A'
     });
     setIsAddModalOpen(true);
   };
@@ -262,6 +281,21 @@ export default function AnimalStockRecord() {
     const finalBreed = formData.breed === 'Other' ? formData.customBreed : formData.breed;
     if (formData.breed === 'Other' && !formData.customBreed.trim()) {
       alert('Validation Error: Breed Name is required when selecting "Other".');
+      return;
+    }
+
+    if (!formData.dob && !formData.currentAge) {
+      alert('Validation Error: Either Date of Birth or Current Age must be provided.');
+      return;
+    }
+
+    if (!formData.currentPen?.trim()) {
+      alert('Validation Error: Cell Assignment is required. Please select a cell from the Farm Module.');
+      return;
+    }
+
+    if (formData.source !== 'Farm Born' && formData.weaningStatus === 'Not Weaned' && !formData.expectedWeaningDate) {
+      alert('Validation Error: Expected Weaning Date is required when Weaning Status is "Not Weaned".');
       return;
     }
 
@@ -340,7 +374,7 @@ export default function AnimalStockRecord() {
         </div>
 
         {/* KPI Row */}
-        {loading && animals.length === 0 ? (
+        {animalsLoading && animals.length === 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <CardSkeleton />
             <CardSkeleton />
@@ -404,7 +438,7 @@ export default function AnimalStockRecord() {
 
         {/* Data Table */}
         <div className="op-card border border-borderDark rounded-xl overflow-hidden">
-          {loading && animals.length === 0 ? (
+          {animalsLoading && animals.length === 0 ? (
             <TableSkeleton rows={6} cols={6} />
           ) : (
             <DataTable 
@@ -487,6 +521,21 @@ export default function AnimalStockRecord() {
               </label>
             </FormField>
 
+            <FormField label="Current Age (Days)" id="currentAge">
+              <input
+                id="currentAge"
+                type="number"
+                min="0"
+                autoComplete="off"
+                className="input-field"
+                placeholder="Age in days"
+                value={formData.currentAge}
+                onChange={e => setFormData({ ...formData, currentAge: e.target.value })}
+              />
+            </FormField>
+          </FormGrid>
+
+          <FormGrid>
             <FormField label="Sex" required id="sex">
               {formData.animalType === 'Sow' || formData.animalType === 'Boar' ? (
                 <>
@@ -629,6 +678,25 @@ export default function AnimalStockRecord() {
             </FormField>
           </FormGrid>
 
+          <FormGrid>
+            <FormField label="Cell Assignment (Farm Module)" required id="currentPen">
+              <select
+                id="currentPen"
+                required
+                className="input-field font-mono"
+                value={formData.currentPen}
+                onChange={e => setFormData({ ...formData, currentPen: e.target.value })}
+              >
+                <option value="" disabled>Select a cell...</option>
+                {cells.filter(c => c.status === 'Active').map(cell => (
+                  <option key={cell._id} value={cell.name}>
+                    {cell.name} (Capacity: {cell.capacity - (cell.assignedAnimals?.length || 0)} available)
+                  </option>
+                ))}
+              </select>
+            </FormField>
+          </FormGrid>
+
           {/* Parents & Lineage Section */}
           <div className="h-[1px] bg-borderDark/40 my-1" />
           <h3 className="text-[11px] font-black text-primary uppercase tracking-widest border-l-2 border-primary pl-2 mb-1">
@@ -739,33 +807,74 @@ export default function AnimalStockRecord() {
           )}
 
           {/* Imported Piglet Details */}
-          {formData.animalType === 'Piglet' && formData.source !== 'Farm Born' && (
+          {formData.source !== 'Farm Born' && (
             <>
               <div className="h-[1px] bg-borderDark/40 my-1" />
-              <h3 className="text-[11px] font-black text-primary uppercase tracking-widest border-l-2 border-primary pl-2 mb-1">
-                Imported Piglet Details
+              <h3 className="text-[11px] font-black text-warning uppercase tracking-widest border-l-2 border-warning pl-2 mb-1">
+                Historical Milestones
               </h3>
+              <p className="text-[9px] text-textMuted leading-relaxed mb-2">
+                "Unknown" statuses will automatically flag the animal for Vet Inspection.
+              </p>
+              
               <FormGrid>
-                <FormField label="Expected Weaning Date" required id="expectedWeaningDate">
-                  <DatePicker
-                    value={formData.expectedWeaningDate || ''}
-                    onChange={val => setFormData({ ...formData, expectedWeaningDate: val })}
-                    className="input-field"
-                    required
-                  />
-                </FormField>
-                <FormField label="Lactation Status" required id="lactationStatus">
+                <FormField label="Vitamin Injection" required id="vitaminInjectionStatus">
                   <select
-                    id="lactationStatus"
+                    id="vitaminInjectionStatus"
                     required
                     className="input-field"
-                    value={formData.lactationStatus || 'Lactating'}
-                    onChange={e => setFormData({ ...formData, lactationStatus: e.target.value })}
+                    value={formData.vitaminInjectionStatus || 'N/A'}
+                    onChange={e => setFormData({ ...formData, vitaminInjectionStatus: e.target.value })}
                   >
-                    <option value="Lactating">Lactating</option>
-                    <option value="Weaning Ready">Weaning Ready</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Unknown">Unknown</option>
+                    <option value="N/A">N/A</option>
                   </select>
                 </FormField>
+
+                <FormField label="Teeth Cutting" required id="teethCuttingStatus">
+                  <select
+                    id="teethCuttingStatus"
+                    required
+                    className="input-field"
+                    value={formData.teethCuttingStatus || 'N/A'}
+                    onChange={e => setFormData({ ...formData, teethCuttingStatus: e.target.value })}
+                  >
+                    <option value="Completed">Completed</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Unknown">Unknown</option>
+                    <option value="N/A">N/A</option>
+                  </select>
+                </FormField>
+              </FormGrid>
+
+              <FormGrid>
+                <FormField label="Weaning Status" required id="weaningStatus">
+                  <select
+                    id="weaningStatus"
+                    required
+                    className="input-field"
+                    value={formData.weaningStatus || 'N/A'}
+                    onChange={e => setFormData({ ...formData, weaningStatus: e.target.value })}
+                  >
+                    <option value="Already Weaned">Already Weaned</option>
+                    <option value="Not Weaned">Not Weaned</option>
+                    <option value="Unknown">Unknown</option>
+                    <option value="N/A">N/A</option>
+                  </select>
+                </FormField>
+
+                {formData.weaningStatus === 'Not Weaned' && (
+                  <FormField label="Expected Weaning Date" required id="expectedWeaningDate">
+                    <DatePicker
+                      value={formData.expectedWeaningDate || ''}
+                      onChange={val => setFormData({ ...formData, expectedWeaningDate: val })}
+                      className="input-field"
+                      required
+                    />
+                  </FormField>
+                )}
               </FormGrid>
             </>
           )}

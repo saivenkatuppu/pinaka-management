@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import MainLayout from '../../../components/layout/MainLayout';
 import { useSowStore } from '../../../store/useSowStore';
 import { useAuthStore } from '../../../store/useAuthStore';
+import { useSettingsStore } from '../../../store/useSettingsStore';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import Modal from '../../../components/ui/Modal';
 import { FormField, FormGrid, FormSection } from '../../../components/ui/FormLayout';
@@ -49,6 +50,8 @@ export default function SowDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const { gestationDuration, pregnancyConfirmationPeriod, heatCycleDuration, evaluateBreedingReadiness } = useSettingsStore(state => state.lifecycle);
+  const evaluateReadinessHelper = useSettingsStore(state => state.evaluateBreedingReadiness);
   const { 
     selectedSow, 
     loading, 
@@ -168,17 +171,22 @@ export default function SowDetailPage() {
     return Math.floor(ageInDays / 30);
   }, [ageInDays]);
 
-  // Gestation Progress Calculations (114 days)
+  const breedingReadiness = useMemo(() => {
+    if (!selectedSow) return { isReady: false };
+    return evaluateReadinessHelper(selectedSow);
+  }, [selectedSow, evaluateReadinessHelper]);
+
+  // Gestation Progress Calculations
   const gestationInfo = useMemo(() => {
     if (!selectedSow || !selectedSow.lastServiceDate || isNaN(new Date(selectedSow.lastServiceDate).getTime())) return null;
     
     const serviceDate = new Date(selectedSow.lastServiceDate);
-    const expectedDate = new Date(selectedSow.expectedFarrowingDate || (serviceDate.getTime() + (114 * 24 * 60 * 60 * 1000)));
+    const expectedDate = new Date(selectedSow.expectedFarrowingDate || (serviceDate.getTime() + (gestationDuration * 24 * 60 * 60 * 1000)));
     const now = new Date();
     
     const elapsedDays = Math.max(0, Math.ceil((now - serviceDate) / (1000 * 60 * 60 * 24)));
     const remainingDays = Math.max(0, Math.ceil((expectedDate - now) / (1000 * 60 * 60 * 24)));
-    const percentage = Math.min(100, Math.round((elapsedDays / 114) * 100));
+    const percentage = Math.min(100, Math.round((elapsedDays / gestationDuration) * 100));
     const isOverdue = now > expectedDate && selectedSow.status === 'Pregnant';
     const overdueDays = isOverdue ? Math.ceil((now - expectedDate) / (1000 * 60 * 60 * 24)) : 0;
 
@@ -191,7 +199,7 @@ export default function SowDetailPage() {
       isOverdue,
       overdueDays
     };
-  }, [selectedSow]);
+  }, [selectedSow, gestationDuration]);
 
   // Litter Weaning Efficiency Metrics
   const litterMetrics = useMemo(() => {
@@ -518,6 +526,29 @@ export default function SowDetailPage() {
     <MainLayout>
       <div className="flex flex-col gap-5 w-full">
         
+        {/* Breeding Readiness Warning Banner */}
+        {selectedSow.purpose !== 'Fattening' && !breedingReadiness.isReady && (
+          <div className="bg-warning/10 border border-warning/40 p-3 rounded-lg text-xs flex items-center justify-between no-print text-warning">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4.5 h-4.5" />
+              <div>
+                <span className="font-extrabold uppercase tracking-wide">
+                  SOW NOT BREEDING READY
+                </span>
+                <p className="text-[11px] opacity-90 mt-0.5">
+                  Age: {breedingReadiness.currentAgeDays} Days • Required Age: {breedingReadiness.requiredAgeDays} Days
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <span className="text-[9px] uppercase font-semibold">Eligibility In:</span>
+              <h4 className="text-sm font-black font-mono leading-none mt-0.5">
+                {breedingReadiness.daysRemaining} Day(s)
+              </h4>
+            </div>
+          </div>
+        )}
+
         {/* Dynamic Countdown Warning Banner */}
         {selectedSow.purpose !== 'Fattening' && activeHeatWarning && (
           <div className={`p-3 rounded-lg border text-xs flex items-center justify-between no-print ${
@@ -600,18 +631,18 @@ export default function SowDetailPage() {
                   <>
                     <button
                       onClick={handleOpenHeat}
-                      disabled={selectedSow.status === 'Pregnant'}
+                      disabled={selectedSow.status === 'Pregnant' || !breedingReadiness.isReady}
                       className="px-2.5 py-2 bg-secondary hover:bg-cardBg text-primary disabled:opacity-40 disabled:cursor-not-allowed border border-borderDark/50 text-xs font-bold rounded flex items-center gap-1 uppercase tracking-wider"
-                      title="Log Heat Cycle Observation"
+                      title={!breedingReadiness.isReady ? "Sow is not of breeding age yet." : "Log Heat Cycle Observation"}
                     >
                       <Flame className="w-3.5 h-3.5" />
                       + Heat Log
                     </button>
                     <button
                       onClick={handleOpenBreeding}
-                      disabled={selectedSow.status === 'Pregnant'}
+                      disabled={selectedSow.status === 'Pregnant' || !breedingReadiness.isReady}
                       className="px-2.5 py-2 bg-secondary hover:bg-cardBg text-blueAccent disabled:opacity-40 disabled:cursor-not-allowed border border-borderDark/50 text-xs font-bold rounded flex items-center gap-1 uppercase tracking-wider"
-                      title="Log Mating / Service Session"
+                      title={!breedingReadiness.isReady ? "Sow is not of breeding age yet." : "Log Mating / Service Session"}
                     >
                       <Award className="w-3.5 h-3.5" />
                       + Breeding Log
@@ -861,7 +892,7 @@ export default function SowDetailPage() {
                 {selectedSow.status === 'Pregnant' && gestationInfo && (
                   <div className="bg-cardBg border border-borderDark rounded-lg p-5">
                     <div className="flex items-center justify-between mb-3.5 border-b border-borderDark/50 pb-2">
-                      <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 5: Gestation Progress Tracker (114 Days Cycle)</span>
+                      <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 5: Gestation Progress Tracker ({gestationDuration} Days Cycle)</span>
                       <span className="text-[9px] uppercase tracking-wider text-textSecondary">Gestation Timeline</span>
                     </div>
                     
@@ -891,7 +922,7 @@ export default function SowDetailPage() {
                         </div>
                         <div>
                           <p className="text-[9px] uppercase tracking-widest font-semibold">Current Week</p>
-                          <h4 className="text-sm font-bold text-textPrimary mt-0.5">Week {Math.ceil(gestationInfo.elapsedDays / 7)} of 16</h4>
+                          <h4 className="text-sm font-bold text-textPrimary mt-0.5">Week {Math.ceil(gestationInfo.elapsedDays / 7)} of {Math.ceil(gestationDuration / 7)}</h4>
                         </div>
                       </div>
                     </div>
@@ -902,7 +933,7 @@ export default function SowDetailPage() {
                 <div className="bg-cardBg border border-borderDark rounded-lg p-5">
                   <div className="flex items-center justify-between mb-3.5 border-b border-borderDark/50 pb-2">
                     <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest">Section 3: Heat Cycle Log & Calendar</span>
-                    <span className="text-[9px] uppercase tracking-wider text-textSecondary">Every 21 days recurrence</span>
+                    <span className="text-[9px] uppercase tracking-wider text-textSecondary">Every {heatCycleDuration} days recurrence</span>
                   </div>
                   
                   <div className="dense-table-container">

@@ -257,7 +257,7 @@ export default function AnimalStockDetailPage() {
                   <div className="p-3 bg-warning/10 border border-warning/20 rounded-lg flex flex-col gap-1.5">
                     <span className="text-[10px] font-bold text-warning uppercase tracking-widest">Piglet Link</span>
                     <span 
-                      onClick={() => navigate(`/piglets/${pigletData?._id || animal.animalNo}`)}
+                      onClick={() => pigletData ? navigate(`/piglets/${pigletData._id}`) : navigate('/piglets')}
                       className="text-xs text-textPrimary font-semibold cursor-pointer hover:underline"
                     >
                       View Piglet Profile

@@ -4,6 +4,7 @@ import MainLayout from '../components/layout/MainLayout';
 import DatePicker from '../components/ui/DatePicker';
 import { useSowStore } from '../store/useSowStore';
 import { useAuthStore } from '../store/useAuthStore';
+import { useSettingsStore } from '../store/useSettingsStore';
 import DataTable from '../components/ui/DataTable';
 import StatusBadge from '../components/ui/StatusBadge';
 import Modal from '../components/ui/Modal';
@@ -30,6 +31,7 @@ import {
 export default function SowRecord() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const { heatCycleDuration, lactationDuration, gestationDuration } = useSettingsStore(state => state.lifecycle);
   const { 
     sows, 
     loading, 
@@ -353,7 +355,7 @@ export default function SowRecord() {
           return (
             <div className="flex flex-col">
               <span className="font-bold text-success">Lactating: {diffDays}d</span>
-              <span className="text-[10px] text-textSecondary">Wean due: {Math.max(0, 60 - diffDays)}d</span>
+              <span className="text-[10px] text-textSecondary">Wean due: {Math.max(0, lactationDuration - diffDays)}d</span>
             </div>
           );
         }
@@ -372,7 +374,7 @@ export default function SowRecord() {
         // 6. Active / Normal - Next Heat cycle monitoring
         const heatDate = row.lastHeatDate ? new Date(row.lastHeatDate) : (row.statusHistory?.filter(h => h.newStatus === 'In Heat')?.pop() ? getFallbackDate('In Heat') : null);
         if (heatDate) {
-          const nextHeat = new Date(heatDate.getTime() + (21 * 24 * 60 * 60 * 1000));
+          const nextHeat = new Date(heatDate.getTime() + (heatCycleDuration * 24 * 60 * 60 * 1000));
           const diffTime = nextHeat - now;
           const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
           

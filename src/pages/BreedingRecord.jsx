@@ -6,6 +6,7 @@ import { useBreedingStore } from '../store/useBreedingStore';
 import { useSowStore } from '../store/useSowStore';
 import { useBoarStore } from '../store/useBoarStore';
 import { useAuthStore } from '../store/useAuthStore';
+import { useSettingsStore } from '../store/useSettingsStore';
 import DataTable from '../components/ui/DataTable';
 import StatusBadge from '../components/ui/StatusBadge';
 import Modal from '../components/ui/Modal';
@@ -35,6 +36,8 @@ export default function BreedingRecord() {
 
   const { sows, fetchSows } = useSowStore();
   const { boars, fetchBoars } = useBoarStore();
+  const { gestationDuration, pregnancyConfirmationPeriod } = useSettingsStore(state => state.lifecycle);
+  const evaluateBreedingReadiness = useSettingsStore(state => state.evaluateBreedingReadiness);
 
   const [activeTab, setActiveTab] = useState('Records'); // 'Records', 'Sows', 'Boars'
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -60,23 +63,21 @@ export default function BreedingRecord() {
 
   // Eligible animals for form
   const eligibleSows = useMemo(() => {
-    return sows.filter(s => 
-      (s.purpose || 'Breeding') === 'Breeding' &&
-      (s.status === 'In Heat' || s.status === 'Heat' || s.status === 'Active') && 
-      s.pregnancyStatus !== 'Pregnant'
-    );
-  }, [sows]);
+    return sows.filter(s => {
+      if ((s.purpose || 'Breeding') !== 'Breeding') return false;
+      if (s.status !== 'In Heat' && s.status !== 'Heat' && s.status !== 'Active') return false;
+      if (s.pregnancyStatus === 'Pregnant') return false;
+      return evaluateBreedingReadiness(s).isReady;
+    });
+  }, [sows, evaluateBreedingReadiness]);
 
   const eligibleBoars = useMemo(() => {
-    return boars.filter(b => 
-      (b.purpose || 'Breeding') === 'Breeding' &&
-      (b.breedingStatus === 'Breeding Ready' || 
-       b.breedingStatus === 'Breeding Active' || 
-       b.breedingStatus === 'Mating' || 
-       b.status === 'Mating' || 
-       b.status === 'Active')
-    );
-  }, [boars]);
+    return boars.filter(b => {
+      if ((b.purpose || 'Breeding') !== 'Breeding') return false;
+      if (b.status === 'Dead' || b.status === 'Culled' || b.status === 'Sold') return false;
+      return evaluateBreedingReadiness(b).isReady;
+    });
+  }, [boars, evaluateBreedingReadiness]);
 
   // Compute all active sows for boar-initiated breeding
   const activeSows = useMemo(() => {
@@ -154,14 +155,14 @@ export default function BreedingRecord() {
   const pregCheckDatePreview = useMemo(() => {
     if (!formData.serviceDate) return '-';
     const d = new Date(formData.serviceDate);
-    return new Date(d.getTime() + (21 * 24 * 60 * 60 * 1000)).toLocaleDateString();
-  }, [formData.serviceDate]);
+    return new Date(d.getTime() + (pregnancyConfirmationPeriod * 24 * 60 * 60 * 1000)).toLocaleDateString();
+  }, [formData.serviceDate, pregnancyConfirmationPeriod]);
 
   const estFarrowingPreview = useMemo(() => {
     if (!formData.serviceDate) return '-';
     const d = new Date(formData.serviceDate);
-    return new Date(d.getTime() + (114 * 24 * 60 * 60 * 1000)).toLocaleDateString();
-  }, [formData.serviceDate]);
+    return new Date(d.getTime() + (gestationDuration * 24 * 60 * 60 * 1000)).toLocaleDateString();
+  }, [formData.serviceDate, gestationDuration]);
 
   const handleOpenAdd = () => {
     setFormError('');
@@ -759,11 +760,11 @@ export default function BreedingRecord() {
                 <FormSection title="4. Auto-Calculated Trackers">
                   <div className="grid grid-cols-2 gap-3 mt-1">
                     <div className="bg-sidebar p-3 border border-borderDark rounded flex flex-col gap-1">
-                      <span className="text-[9px] text-textSecondary uppercase font-bold tracking-widest">Pregnancy Check Date (+21d)</span>
+                      <span className="text-[9px] text-textSecondary uppercase font-bold tracking-widest">Pregnancy Check Date (+{pregnancyConfirmationPeriod}d)</span>
                       <span className="text-info font-bold font-mono">{pregCheckDatePreview}</span>
                     </div>
                     <div className="bg-sidebar p-3 border border-borderDark rounded flex flex-col gap-1">
-                      <span className="text-[9px] text-textSecondary uppercase font-bold tracking-widest">Expected Farrowing (+114d)</span>
+                      <span className="text-[9px] text-textSecondary uppercase font-bold tracking-widest">Expected Farrowing (+{gestationDuration}d)</span>
                       <span className="text-success font-bold font-mono">{estFarrowingPreview}</span>
                     </div>
                   </div>

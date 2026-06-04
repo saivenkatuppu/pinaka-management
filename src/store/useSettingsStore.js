@@ -116,6 +116,41 @@ export const useSettingsStore = create(
         return configuredValue * 24 * 60 * 60 * 1000;
       },
 
+      // Evaluates breeding readiness based on global settings and animal age
+      evaluateBreedingReadiness: (animal) => {
+        if (!animal) return { isReady: false, currentAgeDays: 0, requiredAgeDays: 0, daysRemaining: 0 };
+        
+        const { lifecycle, calculateAgeInDays } = get();
+        
+        let currentAgeDays = 0;
+        if (animal.currentAge !== undefined && animal.currentAge !== null && animal.currentAge !== '') {
+          // Use explicitly provided age (and calculate how much time has passed since it was created)
+          const passedDays = calculateAgeInDays(animal.createdAt || new Date().toISOString());
+          currentAgeDays = Number(animal.currentAge) + passedDays;
+        } else {
+          currentAgeDays = calculateAgeInDays(animal.dob);
+        }
+
+        let requiredAgeDays = 0;
+        const type = animal.animalType || (animal.animalNo?.startsWith('B') ? 'Boar' : 'Sow');
+        
+        if (type === 'Boar') {
+          requiredAgeDays = lifecycle.boarPubertyAge || 180;
+        } else if (type === 'Sow') {
+          requiredAgeDays = lifecycle.sowBreedingReadinessAge || 210;
+        }
+
+        const isReady = currentAgeDays >= requiredAgeDays;
+        const daysRemaining = isReady ? 0 : (requiredAgeDays - currentAgeDays);
+
+        return {
+          isReady,
+          currentAgeDays,
+          requiredAgeDays,
+          daysRemaining
+        };
+      },
+
       // Helper to calculate a future date based on configured duration
       calculateDate: (startDateStr, durationKey) => {
         const { lifecycle, getMs } = get();
