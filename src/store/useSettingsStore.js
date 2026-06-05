@@ -21,6 +21,8 @@ const defaultSettings = {
     weaningAge: 60,
     boarPubertyAge: 180,
     sowBreedingReadinessAge: 210,
+    vitaminInjectionDay: 3,
+    teethCuttingDay: 13,
   },
   testMode: {
     enabled: false,

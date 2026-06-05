@@ -142,6 +142,53 @@ export default function PigletDetailPage() {
     return calculateAgeInDays(selectedPiglet.dob);
   }, [selectedPiglet, calculateAgeInDays]);
 
+  const { vitaminInjectionDay = 3, teethCuttingDay = 13 } = lifecycle || {};
+
+  const healthTasks = useMemo(() => {
+    if (!selectedPiglet || selectedPiglet.status === 'Dead' || selectedPiglet.status === 'Sold') return [];
+    
+    const tasks = [];
+    const age = calculateAgeInDays(selectedPiglet.dob);
+    
+    // Vitamin Injection Task
+    if (selectedPiglet.vitaminInjectionStatus !== 'Completed' && selectedPiglet.vitaminInjectionStatus !== 'N/A') {
+      let status = 'Upcoming';
+      if (age === vitaminInjectionDay) status = 'Due Today';
+      else if (age > vitaminInjectionDay) status = 'Overdue';
+      
+      tasks.push({
+        id: 'vitamin',
+        eventType: 'Vitamin Injection',
+        dueDay: vitaminInjectionDay,
+        status
+      });
+    }
+
+    // Teeth Cutting Task
+    if (selectedPiglet.teethCuttingStatus !== 'Completed' && selectedPiglet.teethCuttingStatus !== 'N/A') {
+      let status = 'Upcoming';
+      if (age === teethCuttingDay) status = 'Due Today';
+      else if (age > teethCuttingDay) status = 'Overdue';
+      
+      tasks.push({
+        id: 'teeth',
+        eventType: 'Teeth Cutting',
+        dueDay: teethCuttingDay,
+        status
+      });
+    }
+
+    return tasks.sort((a, b) => {
+      if (a.status !== b.status) {
+        if (a.status === 'Overdue') return -1;
+        if (b.status === 'Overdue') return 1;
+        if (a.status === 'Due Today') return -1;
+        if (b.status === 'Due Today') return 1;
+      }
+      return 0;
+    });
+  }, [selectedPiglet, calculateAgeInDays, vitaminInjectionDay, teethCuttingDay]);
+
   // Open modals handlers
   const handleOpenAddWeight = () => {
     setFormError('');
@@ -178,6 +225,7 @@ export default function PigletDetailPage() {
       weaningWeight: selectedPiglet.latestWeight || selectedPiglet.birthWeight || '12.0',
       source: 'WeaningPromotion',
       purpose: selectedPiglet.sex === 'Female' ? 'Breeding' : 'Fattening',
+      destination: selectedPiglet.sex === 'Female' ? 'Sow' : 'Fattening',
       castrationStatus: 'Not Castrated',
       notes: 'Weaning completed, operational profile completed and promoted.',
       parentUnknown: !selectedPiglet.sireNo && !selectedPiglet.damNo
@@ -313,7 +361,7 @@ export default function PigletDetailPage() {
       });
       setIsWeanOpen(false);
       alert('Piglet successfully weaned, operational profile completed and promoted.');
-      navigate(weanData.sex === 'Female' ? '/sows' : '/boars');
+      navigate(weanData.destination === 'Sow' ? '/sows' : (weanData.destination === 'Boar' ? '/boars' : '/stock'));
     } catch (err) {
       setFormError(err.message);
     }
@@ -675,6 +723,55 @@ export default function PigletDetailPage() {
               </div>
             </div>
 
+            {/* Pending Health Milestones */}
+            <div className="bg-cardBg border border-borderDark rounded-lg p-5">
+              <div className="flex items-center justify-between mb-3.5 border-b border-borderDark/50 pb-2">
+                <span className="text-[10px] font-black uppercase text-textPrimary tracking-widest font-mono">Pending Health Milestones</span>
+                <Activity className="w-3.5 h-3.5 text-primary" />
+              </div>
+              
+              {healthTasks.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-6 text-center border border-borderDark border-dashed rounded-lg bg-sidebar/30">
+                  <CheckCircle className="w-6 h-6 text-success mb-2" />
+                  <span className="text-xs font-bold text-textPrimary">All Caught Up!</span>
+                  <span className="text-[10px] text-textSecondary mt-0.5">No pending health events.</span>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {healthTasks.map(task => (
+                    <div key={task.id} className="flex items-center justify-between border border-borderDark/50 rounded p-2.5 bg-sidebar/30">
+                      <div>
+                        <span className="font-bold text-xs text-textPrimary block">{task.eventType}</span>
+                        <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded mt-1 inline-block ${
+                          task.status === 'Due Today' ? 'bg-danger/10 text-danger border border-danger/20' :
+                          task.status === 'Overdue' ? 'bg-danger/20 text-danger border border-danger/50 animate-pulse' :
+                          'bg-warning/10 text-warning border border-warning/20'
+                        }`}>
+                          {task.status} (Day {task.dueDay})
+                        </span>
+                      </div>
+                      {canEdit && (
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Mark ${task.eventType} as completed?`)) {
+                              usePigletStore.getState().markHealthEventDone(
+                                selectedPiglet._id, 
+                                task.eventType, 
+                                new Date().toISOString().split('T')[0]
+                              ).then(() => fetchPigletById(selectedPiglet._id));
+                            }
+                          }}
+                          className="px-2.5 py-1.5 bg-success/10 hover:bg-success/20 text-success border border-success/30 rounded text-[9px] font-bold uppercase tracking-wider transition-colors"
+                        >
+                          Mark Done
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Audit Logs */}
             <div className="bg-cardBg border border-borderDark rounded-lg p-5">
               <div className="flex items-center justify-between mb-3.5 border-b border-borderDark/50 pb-2">
@@ -1009,26 +1106,24 @@ export default function PigletDetailPage() {
               </div>
             </div>
 
-            <FormSection title="Breeding / Pedigree Lineage Check">
-              <FormGrid cols={2}>
-                <FormField label="Sire Tag (Father)">
-                  <input type="text" className="dense-input bg-cardBg opacity-60 cursor-not-allowed font-mono font-bold" value={selectedPiglet?.sireNo || 'UNKNOWN'} readOnly />
-                </FormField>
-                <FormField label="Dam Tag (Mother)">
-                  <input type="text" className="dense-input bg-cardBg opacity-60 cursor-not-allowed font-mono font-bold" value={selectedPiglet?.damNo || 'UNKNOWN'} readOnly />
-                </FormField>
-              </FormGrid>
-              <div className="flex items-center gap-2 mt-1">
-                <input 
-                  type="checkbox"
-                  id="parentBypass"
-                  checked={weanData.parentUnknown}
-                  onChange={(e) => setWeanData({ ...weanData, parentUnknown: e.target.checked })}
-                  className="rounded border-borderDark bg-sidebar text-primary focus:ring-primary w-4.5 h-4.5"
-                />
-                <label htmlFor="parentBypass" className="text-[11px] font-bold text-textSecondary cursor-pointer flex items-center gap-1 select-none">
-                  <HelpCircle className="w-3.5 h-3.5 opacity-60" /> Parent Pedigree Unknown (Bypass Lineage Validation constraints)
-                </label>
+            <FormSection title="Breeding / Pedigree Lineage">
+              <div className="flex flex-col gap-2 p-2 bg-cardBg rounded border border-borderDark/50">
+                <div className="flex justify-between items-center text-[11px]">
+                  <span className="text-textSecondary">Sire Tag (Father): <strong className="text-textPrimary font-mono ml-1">{selectedPiglet?.sireNo || 'UNKNOWN'}</strong></span>
+                  <span className="text-textSecondary">Dam Tag (Mother): <strong className="text-textPrimary font-mono ml-1">{selectedPiglet?.damNo || 'UNKNOWN'}</strong></span>
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <input 
+                    type="checkbox"
+                    id="parentBypass"
+                    checked={weanData.parentUnknown}
+                    onChange={(e) => setWeanData({ ...weanData, parentUnknown: e.target.checked })}
+                    className="rounded border-borderDark bg-sidebar text-primary focus:ring-primary w-4.5 h-4.5"
+                  />
+                  <label htmlFor="parentBypass" className="text-[11px] font-bold text-textSecondary cursor-pointer flex items-center gap-1 select-none">
+                    <HelpCircle className="w-3.5 h-3.5 opacity-60" /> Parent Pedigree Unknown (Bypass Validation)
+                  </label>
+                </div>
               </div>
             </FormSection>
 
@@ -1055,60 +1150,39 @@ export default function PigletDetailPage() {
               </FormGrid>
 
               <FormGrid cols={2}>
-                <FormField label="Classification Sex *" required>
+                <FormField label="Promotion Destination *" required>
                   <select
-                    value={weanData.sex}
-                    onChange={(e) => setWeanData({ 
-                      ...weanData, 
-                      sex: e.target.value,
-                      purpose: e.target.value === 'Female' ? 'Breeding' : 'Fattening'
-                    })}
+                    value={weanData.destination || ''}
+                    onChange={(e) => {
+                      const dest = e.target.value; // 'Sow' or 'Boar'
+                      let resolvedSex = dest === 'Sow' ? 'Female' : 'Male';
+                      let resolvedCastration = dest === 'Boar' ? weanData.castrationStatus : 'N/A';
+                      let resolvedPurpose = weanData.purpose;
+                      
+                      // If Boar and Castrated, lock to Fattening
+                      if (dest === 'Boar' && resolvedCastration === 'Castrated') {
+                        resolvedPurpose = 'Fattening';
+                      }
+                      
+                      setWeanData({
+                        ...weanData,
+                        destination: dest,
+                        sex: resolvedSex,
+                        purpose: resolvedPurpose,
+                        castrationStatus: resolvedCastration
+                      });
+                    }}
                     className="dense-select"
                   >
-                    <option value="Female">Female (Promotes to Sow)</option>
-                    <option value="Male">Male (Promotes to Boar)</option>
-                  </select>
-                </FormField>
-                <FormField label="Breed Name *" required>
-                  <select
-                    value={weanData.breed}
-                    onChange={(e) => setWeanData({ ...weanData, breed: e.target.value })}
-                    className="dense-select"
-                  >
-                    <option value="Large White">Large White</option>
-                    <option value="Landrace">Landrace</option>
-                    <option value="Duroc">Duroc</option>
-                    <option value="Crossbred">Crossbred</option>
-                    <option value="Other">Other (Custom)</option>
+                    <option value="" disabled>Select Destination Module</option>
+                    <option value="Sow">Sow (Female Animal)</option>
+                    <option value="Boar">Boar (Male Animal)</option>
                   </select>
                 </FormField>
               </FormGrid>
 
-              {weanData.breed === 'Other' && (
-                <FormField label="Specify Custom Breed Name *" required>
-                  <input
-                    type="text"
-                    placeholder="Enter breed name"
-                    value={weanData.customBreed}
-                    onChange={(e) => setWeanData({ ...weanData, customBreed: e.target.value })}
-                    className="dense-input"
-                  />
-                </FormField>
-              )}
-
-              <FormGrid cols={weanData.sex === 'Male' ? 2 : 1}>
-                <FormField label="Herd Purpose Assignment *" required>
-                  <select
-                    value={weanData.purpose}
-                    onChange={(e) => setWeanData({ ...weanData, purpose: e.target.value })}
-                    disabled={weanData.sex === 'Male' && weanData.castrationStatus === 'Castrated'}
-                    className="dense-select disabled:opacity-60 disabled:cursor-not-allowed"
-                  >
-                    <option value="Breeding">Breeding Program</option>
-                    <option value="Fattening">Grower/Fattening herd</option>
-                  </select>
-                </FormField>
-                {weanData.sex === 'Male' && (
+              {weanData.destination === 'Boar' && (
+                <FormGrid cols={2}>
                   <FormField label="Castration Status *" required>
                     <select
                       value={weanData.castrationStatus}
@@ -1126,8 +1200,34 @@ export default function PigletDetailPage() {
                       <option value="Castrated">Castrated (Barrows)</option>
                     </select>
                   </FormField>
-                )}
-              </FormGrid>
+                  <FormField label="Herd Purpose Assignment *" required>
+                    <select
+                      value={weanData.purpose}
+                      onChange={(e) => setWeanData({ ...weanData, purpose: e.target.value })}
+                      disabled={weanData.castrationStatus === 'Castrated'}
+                      className="dense-select disabled:opacity-60 disabled:cursor-not-allowed bg-cardBg"
+                    >
+                      <option value="Breeding">Breeding Program</option>
+                      <option value="Fattening">Grower/Fattening herd</option>
+                    </select>
+                  </FormField>
+                </FormGrid>
+              )}
+
+              {weanData.destination === 'Sow' && (
+                <FormGrid cols={1}>
+                  <FormField label="Herd Purpose Assignment *" required>
+                    <select
+                      value={weanData.purpose}
+                      onChange={(e) => setWeanData({ ...weanData, purpose: e.target.value })}
+                      className="dense-select bg-cardBg"
+                    >
+                      <option value="Breeding">Breeding Program</option>
+                      <option value="Fattening">Grower/Fattening herd</option>
+                    </select>
+                  </FormField>
+                </FormGrid>
+              )}
 
               <FormField label="Weaning remarks / notes">
                 <textarea 

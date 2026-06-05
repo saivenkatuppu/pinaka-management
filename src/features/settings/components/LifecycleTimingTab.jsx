@@ -18,6 +18,8 @@ export default function LifecycleTimingTab() {
     { name: 'weaningAge', label: 'Weaning Age', desc: 'Age in days when piglets are weaned.' },
     { name: 'boarPubertyAge', label: 'Boar Puberty Age', desc: 'Age in days when boars are ready to breed.' },
     { name: 'sowBreedingReadinessAge', label: 'Sow Breeding Readiness', desc: 'Age in days when gilts are ready to breed.' },
+    { name: 'vitaminInjectionDay', label: 'Vitamin Injection Due', desc: 'Days after birth when vitamin injection is required.' },
+    { name: 'teethCuttingDay', label: 'Teeth Cutting Due', desc: 'Days after birth when teeth cutting is required.' },
   ];
 
   return (

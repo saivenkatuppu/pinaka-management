@@ -94,7 +94,7 @@ export const usePigletStore = create((set, get) => ({
       }
       if (filters.search) {
         const query = filters.search.toLowerCase();
-        list = list.filter(p => 
+        list = list.filter(p =>
           p.animalNo.toLowerCase().includes(query) ||
           p.breed.toLowerCase().includes(query) ||
           p.penNo.toLowerCase().includes(query)
@@ -127,7 +127,7 @@ export const usePigletStore = create((set, get) => ({
     try {
       const list = loadLocalPiglets();
       const code = pigletData.animalNo.toUpperCase().trim();
-      
+
       const exists = list.some(p => p.animalNo === code);
       if (exists) throw new Error(`Animal ID '${code}' is already registered.`);
 
@@ -146,6 +146,11 @@ export const usePigletStore = create((set, get) => ({
         status: pigletData.status || "Lactating",
         latestWeight: birthWeightVal,
         notes: pigletData.notes || "",
+        vitaminInjectionStatus: pigletData.vitaminInjectionStatus || "Pending",
+        vitaminInjectionDate: pigletData.vitaminInjectionDate || null,
+        teethCuttingStatus: pigletData.teethCuttingStatus || "Pending",
+        teethCuttingDate: pigletData.teethCuttingDate || null,
+        castrationStatus: pigletData.sex === 'Male' ? (pigletData.castrationStatus || "Pending") : "N/A",
         isDeleted: false,
         createdAt: new Date().toISOString(),
         weightLogs: [
@@ -218,11 +223,38 @@ export const usePigletStore = create((set, get) => ({
       const list = loadLocalPiglets();
       const updatedList = list.map(p => p._id === id ? { ...p, isDeleted: true } : p);
       saveLocalPiglets(updatedList);
-      set({ 
-        piglets: updatedList.filter(p => !p.isDeleted), 
+      set({
+        piglets: updatedList.filter(p => !p.isDeleted),
         selectedPiglet: get().selectedPiglet?._id === id ? null : get().selectedPiglet,
-        loading: false 
+        loading: false
       });
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
+  },
+
+  markHealthEventDone: async (id, eventType, completionDate, enteredBy = 'System') => {
+    set({ loading: true, error: null });
+    try {
+      const list = loadLocalPiglets();
+      const updatedList = list.map(p => {
+        if (p._id === id) {
+          if (eventType === 'Vitamin Injection') {
+            return { ...p, vitaminInjectionStatus: 'Completed', vitaminInjectionDate: completionDate };
+          } else if (eventType === 'Teeth Cutting') {
+            return { ...p, teethCuttingStatus: 'Completed', teethCuttingDate: completionDate };
+          } else if (eventType === 'Castration') {
+            return { ...p, castrationStatus: 'Completed' };
+          }
+        }
+        return p;
+      });
+
+      saveLocalPiglets(updatedList);
+      const matched = updatedList.find(p => p._id === id);
+      set({ piglets: updatedList, selectedPiglet: matched, loading: false });
+      return matched;
     } catch (err) {
       set({ error: err.message, loading: false });
       throw err;
@@ -234,7 +266,7 @@ export const usePigletStore = create((set, get) => ({
     try {
       const list = loadLocalPiglets();
       const newWeight = Number(weightLog.weight);
-      
+
       const updatedList = list.map(p => {
         if (p._id === id) {
           const updated = { ...p };
@@ -297,6 +329,7 @@ export const usePigletStore = create((set, get) => ({
         matched = updatedPigletRecord;
 
         // Save promoted local records
+        // Grower records are handled differently, no separate local store needed here
         if (newSowRecord) {
           const sows = JSON.parse(localStorage.getItem('pinaka_sows') || '[]');
           localStorage.setItem('pinaka_sows', JSON.stringify([newSowRecord, ...sows]));
@@ -307,8 +340,9 @@ export const usePigletStore = create((set, get) => ({
         }
       } else {
         // Fallback local logic
-        const newRecordId = `${weanData.destination === 'Sow' ? 'sow' : 'boar'}_${Date.now()}`;
-        
+        const destPrefix = weanData.destination === 'Sow' ? 'sow' : weanData.destination === 'Boar' ? 'boar' : 'grower';
+        const newRecordId = `${destPrefix}_${Date.now()}`;
+
         const destType = weanData.destination || (weanData.purpose === 'Breeding' ? (weanData.sex === 'Female' ? 'Sow' : 'Boar') : 'Fattening');
         const finalSex = destType === 'Sow' ? 'Female' : (destType === 'Boar' ? 'Male' : (weanData.sex || target.sex || 'Unknown'));
         const finalBreed = weanData.breed || target.breed;
@@ -337,7 +371,7 @@ export const usePigletStore = create((set, get) => ({
               sowId: (finalPurpose === 'Breeding' && destType === 'Sow') ? newRecordId : null,
               boarId: (finalPurpose === 'Breeding' && destType === 'Boar') ? newRecordId : null
             };
-            
+
             updated.weightLogs.push({
               _id: `w_${Date.now()}_wean`,
               date: new Date().toISOString().split('T')[0],
@@ -490,10 +524,10 @@ export const usePigletStore = create((set, get) => ({
       }
 
       saveLocalPiglets(updatedList);
-      set({ 
-        piglets: updatedList.filter(p => !p.isDeleted), 
+      set({
+        piglets: updatedList.filter(p => !p.isDeleted),
         selectedPiglet: matched,
-        loading: false 
+        loading: false
       });
 
       // Dynamic imports to hydrate stores
@@ -605,7 +639,7 @@ export const usePigletStore = create((set, get) => ({
       try {
         const { useAnimalStore } = await import('./useAnimalStore');
         await useAnimalStore.getState().fetchAnimals();
-      } catch (e) {}
+      } catch (e) { }
 
       return activated;
     } catch (err) {

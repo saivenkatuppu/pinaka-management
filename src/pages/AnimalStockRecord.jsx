@@ -180,7 +180,7 @@ export default function AnimalStockRecord() {
       customBreed: '',
       currentWeight: '',
       source: 'Farm Born',
-      animalType: 'Piglet',
+      animalType: 'Sow',
       purpose: 'Pending',
       castrationStatus: 'N/A',
       currentPen: '',
@@ -210,7 +210,7 @@ export default function AnimalStockRecord() {
       customBreed: '',
       currentWeight: '',
       source: 'Farm Born',
-      animalType: 'Piglet',
+      animalType: 'Sow',
       purpose: 'Pending',
       castrationStatus: 'N/A',
       currentPen: '',
@@ -243,7 +243,7 @@ export default function AnimalStockRecord() {
       customBreed: isCustomBreed ? animal.breed : '',
       currentWeight: animal.currentWeight || '',
       source: animal.source || 'Farm Born',
-      animalType: animal.animalType || 'Piglet',
+      animalType: animal.animalType || 'Sow',
       purpose: animal.purpose || 'Pending',
       castrationStatus: animal.castrationStatus || 'N/A',
       currentPen: animal.currentPen || '',
@@ -628,7 +628,7 @@ export default function AnimalStockRecord() {
                 id="animalType"
                 required
                 className="input-field"
-                value={formData.animalType || 'Piglet'}
+                value={formData.animalType || 'Sow'}
                 onChange={e => {
                   const type = e.target.value;
                   let newSex = formData.sex;
@@ -657,7 +657,9 @@ export default function AnimalStockRecord() {
                   });
                 }}
               >
-                <option value="Piglet">Piglet</option>
+                {activeEditAnimal && formData.animalType === 'Piglet' && (
+                  <option value="Piglet">Piglet</option>
+                )}
                 <option value="Sow">Sow</option>
                 <option value="Boar">Boar</option>
               </select>
