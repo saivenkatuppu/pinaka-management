@@ -103,16 +103,15 @@ export default function PigletRecord() {
   });
 
   const [weanData, setWeanData] = useState({
-    earTag: '',
-    sex: 'Female',
-    breed: 'Large White',
-    customBreed: '',
     weaningWeight: '',
-    source: 'WeaningPromotion',
-    purpose: 'Breeding',
-    castrationStatus: 'Not Castrated',
+    customAnimalNo: '',
+    herdPurpose: 'Grower/Fattening Herd',
+    destinationPenId: '',
+    enteredBy: '',
     notes: '',
-    parentUnknown: false
+    earTag: '',
+    parentUnknown: false,
+    castrationStatus: 'Not Castrated'
   });
 
   const [formError, setFormError] = useState('');
@@ -141,7 +140,7 @@ export default function PigletRecord() {
 
   // KPI calculations
   const kpis = useMemo(() => {
-    const active = piglets.filter(p => p.status === 'Lactating' || p.status === 'Under Treatment');
+    const active = piglets.filter(p => p.status === 'LACTATING' || p.status === 'Under Treatment');
     const total = active.length;
     
     // Average birth weight
@@ -153,12 +152,7 @@ export default function PigletRecord() {
     const pens = [...new Set(active.map(p => p.penNo))].filter(Boolean).length;
 
     // Weaning ready piglets (age >= weaningAge for farm born, lactationStatus/date check for imported)
-    const weaningReadyCount = active.filter(p => {
-      if (p.source && p.source !== 'Farm Born') {
-        return p.lactationStatus === 'Weaning Ready' || (p.expectedWeaningDate && new Date() >= new Date(p.expectedWeaningDate));
-      }
-      return calculateAgeInDays(p.dob) >= weaningAge;
-    }).length;
+    const weaningReadyCount = piglets.filter(p => p.status === 'WEANING READY').length;
 
     return { total, avgBirth, pens, weaningReadyCount };
   }, [piglets, calculateAgeInDays, weaningAge]);
@@ -270,23 +264,16 @@ export default function PigletRecord() {
     setFormError('');
     setSelectedAnimal(animal);
     
-    const defaultDest = animal.sex === 'Female' ? 'Sow' : 'Boar';
-    
     setWeanData({
-      destination: defaultDest,
       customAnimalNo: animal.animalNo || '',
-      penNo: animal.penNo || '',
       enteredBy: user?.name || '',
-      earTag: animal.earTag || '',
-      sex: animal.sex || 'Female',
-      breed: animal.breed || 'Large White',
-      customBreed: '',
       weaningWeight: animal.latestWeight || animal.birthWeight || '12.0',
-      source: 'WeaningPromotion',
-      purpose: animal.sex === 'Female' ? 'Breeding' : 'Fattening',
-      castrationStatus: 'Not Castrated',
+      herdPurpose: animal.sex === 'Female' ? 'Breeding Program' : 'Grower/Fattening Herd',
+      destinationPenId: '',
       notes: 'Weaning completed, profile hydrated and promoted from Piglet Module.',
-      parentUnknown: !animal.sireNo && !animal.damNo
+      earTag: animal.earTag || '',
+      parentUnknown: !animal.sireNo && !animal.damNo,
+      castrationStatus: 'Not Castrated'
     });
     setIsWeanOpen(true);
   };
@@ -380,11 +367,7 @@ export default function PigletRecord() {
     e.preventDefault();
     setFormError('');
 
-    if (!weanData.destination) {
-      setFormError('Destination is required.');
-      return;
-    }
-    if (!weanData.penNo || !weanData.penNo.trim()) {
+    if (!weanData.destinationPenId || !weanData.destinationPenId.trim()) {
       setFormError('Destination Pen / Shed is required.');
       return;
     }
@@ -397,18 +380,6 @@ export default function PigletRecord() {
       return;
     }
 
-    const finalBreed = weanData.breed === 'Other' ? weanData.customBreed : weanData.breed;
-    if (weanData.breed === 'Other' && !weanData.customBreed.trim()) {
-      setFormError('Breed Name is required when selecting "Other".');
-      return;
-    }
-
-    if (!weanData.parentUnknown && (!selectedAnimal.sireNo || !selectedAnimal.damNo)) {
-      setFormError('Lineage validation: Mother (Dam No) and Father (Sire No) are required for weaning. Check the bypass box if pedigree is unknown.');
-      return;
-    }
-
-    try {
       await weanPigletAndPromote(selectedAnimal._id, {
         ...weanData,
         breed: finalBreed,
@@ -544,14 +515,6 @@ export default function PigletRecord() {
         
         return (
           <div className="flex items-center gap-1.5 no-print">
-            <button 
-              onClick={() => navigate(`/piglets/${row._id}`)}
-              className="p-1 hover:bg-cardBg hover:text-primary rounded text-textSecondary"
-              title="View full operational history card"
-            >
-              <Eye className="w-3.5 h-3.5" />
-            </button>
-            
             {canEdit && !isWeanedOrDead && (
               <>
                 <button 
@@ -560,13 +523,6 @@ export default function PigletRecord() {
                   title="Update Animal Weight Log"
                 >
                   <Scale className="w-3.5 h-3.5" />
-                </button>
-                <button 
-                  onClick={() => handleOpenStatus(row)}
-                  className="p-1 hover:bg-cardBg hover:text-warning rounded text-textSecondary"
-                  title="Change operational status"
-                >
-                  <ClipboardList className="w-3.5 h-3.5" />
                 </button>
                 <button 
                   onClick={() => handleOpenWean(row)}
@@ -1065,33 +1021,13 @@ export default function PigletRecord() {
 
             <FormSection title="Weaning & Promotion Profile">
               <FormGrid cols={2}>
-                <FormField label="Promotion Destination *" required>
-                  <select
-                    value={weanData.destination}
-                    onChange={(e) => {
-                      const dest = e.target.value; // 'Sow' or 'Boar'
-                      let resolvedSex = dest === 'Sow' ? 'Female' : 'Male';
-                      let resolvedCastration = dest === 'Boar' ? weanData.castrationStatus : 'N/A';
-                      let resolvedPurpose = weanData.purpose;
-                      
-                      // If Boar and Castrated, lock to Fattening
-                      if (dest === 'Boar' && resolvedCastration === 'Castrated') {
-                        resolvedPurpose = 'Fattening';
-                      }
-                      
-                      setWeanData({
-                        ...weanData,
-                        destination: dest,
-                        sex: resolvedSex,
-                        purpose: resolvedPurpose,
-                        castrationStatus: resolvedCastration
-                      });
-                    }}
-                    className="dense-select"
-                  >
-                    <option value="Sow">Sow (Female Animal)</option>
-                    <option value="Boar">Boar (Male Animal)</option>
-                  </select>
+                <FormField label="Target Module (Auto-Routed)" required>
+                  <input
+                    type="text"
+                    value={selectedAnimal?.sex === 'Female' ? 'Sow (Female Animal)' : 'Boar (Male Animal)'}
+                    className="dense-input bg-cardBg opacity-80 font-bold text-primary cursor-not-allowed"
+                    disabled
+                  />
                 </FormField>
 
                 <FormField label="Animal ID / Number (Optional)">
@@ -1106,22 +1042,42 @@ export default function PigletRecord() {
               </FormGrid>
 
               <FormGrid cols={2}>
+                <FormField label="Herd Purpose Assignment *" required>
+                  <select
+                    value={weanData.herdPurpose}
+                    onChange={(e) => setWeanData({ ...weanData, herdPurpose: e.target.value, destinationPenId: '' })}
+                    className="dense-select bg-cardBg font-bold"
+                  >
+                    <option value="Breeding Program">Breeding Program</option>
+                    <option value="Grower/Fattening Herd">Grower/Fattening Herd</option>
+                  </select>
+                </FormField>
+
                 <FormField label="Destination Pen / Shed Assignment *" required>
                   <select 
-                    value={weanData.penNo}
-                    onChange={(e) => setWeanData({ ...weanData, penNo: e.target.value })}
+                    value={weanData.destinationPenId}
+                    onChange={(e) => setWeanData({ ...weanData, destinationPenId: e.target.value })}
                     className="dense-select"
                     required
                   >
-                    <option value="" disabled>Select a cell...</option>
-                    {cells.filter(c => c.status === 'Active').map(cell => (
-                      <option key={cell._id} value={cell.name}>
-                        {cell.name} (Cap: {cell.capacity - (cell.assignedAnimals?.length || 0)})
-                      </option>
-                    ))}
+                    <option value="" disabled>Select an available cell...</option>
+                    {cells.filter(c => {
+                      if (c.status !== 'Active') return false;
+                      if (weanData.herdPurpose === 'Breeding Program') return c.type === 'Breeding' || c.type === 'Both';
+                      if (weanData.herdPurpose === 'Grower/Fattening Herd') return c.type === 'Fattening' || c.type === 'Both';
+                      return true;
+                    }).map(cell => {
+                      const occupancy = cell.assignedAnimals?.length || 0;
+                      const available = cell.capacity - occupancy;
+                      const isFull = available <= 0;
+                      return (
+                        <option key={cell._id} value={cell._id} disabled={isFull}>
+                          {cell.name} (Cap: {cell.capacity}, Available: {available}) {isFull ? ' - FULL' : ''}
+                        </option>
+                      )
+                    })}
                   </select>
                 </FormField>
-                
               </FormGrid>
 
               <FormGrid cols={2}>
@@ -1146,49 +1102,16 @@ export default function PigletRecord() {
                 </FormField>
               </FormGrid>
 
-              {weanData.destination === 'Boar' && (
-                <FormGrid cols={2}>
+              {selectedAnimal?.sex === 'Male' && (
+                <FormGrid cols={1}>
                   <FormField label="Castration Status *" required>
                     <select
                       value={weanData.castrationStatus}
-                      onChange={(e) => {
-                        const castrated = e.target.value === 'Castrated';
-                        setWeanData({ 
-                          ...weanData, 
-                          castrationStatus: e.target.value,
-                          purpose: castrated ? 'Fattening' : weanData.purpose
-                        });
-                      }}
+                      onChange={(e) => setWeanData({ ...weanData, castrationStatus: e.target.value })}
                       className="dense-select"
                     >
                       <option value="Not Castrated">Not Castrated</option>
                       <option value="Castrated">Castrated (Barrows)</option>
-                    </select>
-                  </FormField>
-                  <FormField label="Herd Purpose Assignment *" required>
-                    <select
-                      value={weanData.purpose}
-                      onChange={(e) => setWeanData({ ...weanData, purpose: e.target.value })}
-                      disabled={weanData.castrationStatus === 'Castrated'}
-                      className="dense-select disabled:opacity-60 disabled:cursor-not-allowed bg-cardBg"
-                    >
-                      <option value="Breeding">Breeding Program</option>
-                      <option value="Fattening">Grower/Fattening herd</option>
-                    </select>
-                  </FormField>
-                </FormGrid>
-              )}
-
-              {weanData.destination === 'Sow' && (
-                <FormGrid cols={1}>
-                  <FormField label="Herd Purpose Assignment *" required>
-                    <select
-                      value={weanData.purpose}
-                      onChange={(e) => setWeanData({ ...weanData, purpose: e.target.value })}
-                      className="dense-select bg-cardBg"
-                    >
-                      <option value="Breeding">Breeding Program</option>
-                      <option value="Fattening">Grower/Fattening herd</option>
                     </select>
                   </FormField>
                 </FormGrid>
@@ -1302,13 +1225,15 @@ export default function PigletRecord() {
             
             <FormSection title="Weight Measurement Specs">
               <FormGrid cols={2}>
-                <FormField label="Logging Date" required>
-                  <DatePicker
-                    value={weightData.date}
-                    onChange={(val) => setWeightData({ ...weightData, date: val })}
+                <FormField label="Current Weight (kg)">
+                  <input 
+                    type="text" 
+                    className="dense-input bg-cardBg opacity-60 cursor-not-allowed font-bold" 
+                    value={selectedAnimal?.latestWeight || selectedAnimal?.birthWeight || 'N/A'} 
+                    readOnly 
                   />
                 </FormField>
-                <FormField label="Measurement Weight (kg) *" required>
+                <FormField label="New Weight (kg) *" required>
                   <input 
                     type="number"
                     step="0.01"
@@ -1319,20 +1244,15 @@ export default function PigletRecord() {
                   />
                 </FormField>
               </FormGrid>
-              <FormGrid cols={1}>
-                <FormField label="Log Type / Event *" required>
-                  <select
-                    value={weightData.type}
-                    onChange={(e) => setWeightData({ ...weightData, type: e.target.value })}
-                    className="dense-select"
-                  >
-                    <option value="Weekly">Weekly check-in</option>
-                    <option value="Treatment Check">Veterinary care log</option>
-                    <option value="Weaning">Weaning milestone</option>
-                  </select>
+              <FormGrid cols={2}>
+                <FormField label="Weight Date" required>
+                  <DatePicker
+                    value={weightData.date}
+                    onChange={(val) => setWeightData({ ...weightData, date: val })}
+                  />
                 </FormField>
               </FormGrid>
-              <FormField label="Specific observations / notes">
+              <FormField label="Notes (Optional)">
                 <textarea 
                   rows={2}
                   placeholder="Notes regarding scale accuracy, health condition..."

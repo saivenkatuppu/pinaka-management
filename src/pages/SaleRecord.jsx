@@ -7,10 +7,12 @@ import { TableSkeleton, CardSkeleton } from '../components/ui/LoadingSkeleton';
 import Modal from '../components/ui/Modal';
 import { FormField, FormGrid, FormSection } from '../components/ui/FormLayout';
 import AnimalSelect from '../components/ui/AnimalSelect';
-import { DollarSign, Plus, TrendingUp, Clock, CheckCircle, AlertTriangle } from 'lucide-react';
+import { DollarSign, Plus, TrendingUp, Clock, CheckCircle, AlertTriangle,
+  Trash2
+} from 'lucide-react';
 
 export default function SaleRecord() {
-  const { sales, loading, fetchSales, recordSale } = useSaleStore();
+  const { sales, loading, fetchSales, recordSale , deleteSaleRecord} = useSaleStore();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [formData, setFormData] = useState({
     saleDate: new Date().toISOString().split('T')[0],
@@ -69,6 +71,28 @@ export default function SaleRecord() {
       )
     },
     { header: "Payment", accessor: "paymentStatus", render: (val) => <StatusBadge status={val} /> },
+      {
+      header: "Actions",
+      accessor: "_id",
+      sortable: false,
+      render: (val, row) => (
+        <div className="flex items-center gap-2">
+          
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if(window.confirm('Are you sure you want to delete this record?')) {
+                deleteSaleRecord(row._id);
+              }
+            }}
+            className="p-1 hover:bg-danger/10 text-danger rounded flex items-center gap-1 transition-colors"
+            title="Delete Record"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )
+    },
   ], []);
 
   const totalAmount = formData.weight && formData.unitPrice

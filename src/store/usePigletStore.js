@@ -82,6 +82,36 @@ export const usePigletStore = create((set, get) => ({
       // Local check first
       let list = loadLocalPiglets();
 
+      // Dynamically calculate status based on age and cross-module records
+      const mortalities = JSON.parse(localStorage.getItem('pinaka_mortalities') || '[]');
+      const treatments = JSON.parse(localStorage.getItem('pinaka_treatments') || '[]');
+
+      list = list.map(p => {
+        // High priority overrides
+        if (p.isDeleted || p.status === 'Dead' || p.status === 'DEAD') return { ...p, status: 'DEAD' };
+
+        // 1. Mortality Override
+        const isDead = mortalities.some(m => !m.isDeleted && m.animalId.toUpperCase() === p.animalNo.toUpperCase());
+        if (isDead) return { ...p, status: 'DEAD' };
+
+        // 2. Treatment Override (Active treatment)
+        const activeTreatment = treatments.some(t => 
+          !t.isDeleted && 
+          t.animalId.toUpperCase() === p.animalNo.toUpperCase() && 
+          (t.recoveryStatus !== 'Recovered' && t.recoveryStatus !== 'Completed')
+        );
+        if (activeTreatment) return { ...p, status: 'UNDER TREATMENT' };
+
+        if (p.status === 'Promoted' || p.status === 'Weaned') return p;
+
+        const ageMs = Date.now() - new Date(p.dob).getTime();
+        const ageDays = Math.floor(ageMs / (1000 * 60 * 60 * 24));
+        return {
+          ...p,
+          status: ageDays >= 61 ? 'WEANING READY' : 'LACTATING'
+        };
+      });
+
       // Apply filter bounds
       if (filters.status) {
         list = list.filter(p => p.status === filters.status);
@@ -110,12 +140,90 @@ export const usePigletStore = create((set, get) => ({
   fetchPigletById: async (id) => {
     set({ loading: true, error: null });
     try {
-      const list = loadLocalPiglets();
-      const match = list.find(p => p._id === id);
+      let list = loadLocalPiglets();
+      let match = list.find(p => p._id === id);
       if (!match) throw new Error("Piglet record not found.");
+      // Handle cross-module overrides dynamically
+      const mortalities = JSON.parse(localStorage.getItem('pinaka_mortalities') || '[]');
+      const treatments = JSON.parse(localStorage.getItem('pinaka_treatments') || '[]');
+
+      if (match.isDeleted || match.status === 'Dead' || match.status === 'DEAD') {
+        match.status = 'DEAD';
+      } else if (mortalities.some(m => !m.isDeleted && m.animalId.toUpperCase() === match.animalNo.toUpperCase())) {
+        match.status = 'DEAD';
+      } else if (treatments.some(t => !t.isDeleted && t.animalId.toUpperCase() === match.animalNo.toUpperCase() && t.recoveryStatus !== 'Recovered' && t.recoveryStatus !== 'Completed')) {
+        match.status = 'UNDER TREATMENT';
+      } else if (match.status !== 'Promoted' && match.status !== 'Weaned') {
+        const ageMs = Date.now() - new Date(match.dob).getTime();
+        const ageDays = Math.floor(ageMs / (1000 * 60 * 60 * 24));
+        match.status = ageDays >= 61 ? 'WEANING READY' : 'LACTATING';
+      }
 
       set({ selectedPiglet: match, loading: false });
       return match;
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
+  },
+
+  promoteFromLitter: async (pigletData) => {
+    set({ loading: true, error: null });
+    try {
+      const list = loadLocalPiglets();
+      const code = pigletData.animalNo.toUpperCase().trim();
+
+      const exists = list.some(p => p.animalNo === code);
+      if (exists) throw new Error(`Piglet '${code}' is already promoted to the Piglet Store.`);
+
+      const birthWeightVal = Number(pigletData.birthWeight || 1.5);
+      
+      const dobDate = new Date(pigletData.dob);
+      const vitaminDate = new Date(dobDate);
+      vitaminDate.setDate(vitaminDate.getDate() + 3);
+      const teethDate = new Date(dobDate);
+      teethDate.setDate(teethDate.getDate() + 13);
+      
+      const newRecord = {
+        _id: `p_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        animalNo: code,
+        dob: pigletData.dob,
+        sex: pigletData.sex || 'Unknown',
+        breed: pigletData.breed || 'Unknown',
+        sireNo: pigletData.sireNo || "UNKNOWN",
+        damNo: pigletData.damNo || "UNKNOWN",
+        farrowingId: pigletData.farrowingId || null,
+        birthWeight: birthWeightVal,
+        weaningWeight: 0,
+        penNo: pigletData.penNo || 'Farrowing Unit',
+        status: "LACTATING",
+        latestWeight: birthWeightVal,
+        notes: pigletData.notes || "Promoted from litter.",
+        vitaminInjectionStatus: "Pending",
+        vitaminInjectionDate: vitaminDate.toISOString().split('T')[0],
+        teethCuttingStatus: "Pending",
+        teethCuttingDate: teethDate.toISOString().split('T')[0],
+        castrationStatus: pigletData.sex === 'Male' ? "Pending" : "N/A",
+        isDeleted: false,
+        createdAt: new Date().toISOString(),
+        weightLogs: [
+          {
+            _id: `w_${Date.now()}`,
+            date: pigletData.dob,
+            type: "Birth",
+            weight: birthWeightVal,
+            notes: "Initial registered birth weight",
+            enteredBy: pigletData.enteredBy || "System"
+          }
+        ],
+        statusHistory: [],
+        promotionHistory: []
+      };
+
+      const updatedList = [newRecord, ...list];
+      saveLocalPiglets(updatedList);
+      set({ piglets: updatedList, loading: false });
+      return newRecord;
     } catch (err) {
       set({ error: err.message, loading: false });
       throw err;
@@ -340,14 +448,13 @@ export const usePigletStore = create((set, get) => ({
         }
       } else {
         // Fallback local logic
-        const destPrefix = weanData.destination === 'Sow' ? 'sow' : weanData.destination === 'Boar' ? 'boar' : 'grower';
+        const destPrefix = target.sex === 'Female' ? 'sow' : 'boar';
         const newRecordId = `${destPrefix}_${Date.now()}`;
 
-        const destType = weanData.destination || (weanData.purpose === 'Breeding' ? (weanData.sex === 'Female' ? 'Sow' : 'Boar') : 'Fattening');
-        const finalSex = destType === 'Sow' ? 'Female' : (destType === 'Boar' ? 'Male' : (weanData.sex || target.sex || 'Unknown'));
+        const finalSex = target.sex || 'Unknown';
         const finalBreed = weanData.breed || target.breed;
-        const finalPurpose = destType === 'Fattening' ? 'Fattening' : 'Breeding';
-        const finalCastrationStatus = destType === 'Boar' ? 'Not Castrated' : (weanData.castrationStatus || 'N/A');
+        const dbPurpose = weanData.herdPurpose === 'Breeding Program' ? 'Breeding' : 'Fattening';
+        const finalCastrationStatus = finalSex === 'Male' ? (weanData.castrationStatus || 'Not Castrated') : 'N/A';
 
         const targetAnimalNo = weanData.customAnimalNo ? weanData.customAnimalNo.toUpperCase().trim() : target.animalNo;
         if (weanData.customAnimalNo && targetAnimalNo !== target.animalNo) {
@@ -356,6 +463,22 @@ export const usePigletStore = create((set, get) => ({
             throw new Error(`Animal No '${targetAnimalNo}' is already registered in registry.`);
           }
         }
+
+        // Find Destination Pen details from store
+        let cellName = 'Unassigned';
+        try {
+          const { useFarmStructureStore } = await import('./useFarmStructureStore');
+          const farmStore = useFarmStructureStore.getState();
+          const destCell = farmStore.cells.find(c => c._id === weanData.destinationPenId);
+          if (destCell) {
+            cellName = destCell.name;
+            await farmStore.assignAnimalsToCell(destCell._id, [targetAnimalNo], weanData.enteredBy || 'System');
+          }
+        } catch (e) {
+          console.error("Failed to assign animal to cell during weaning:", e);
+        }
+
+        const destModule = finalSex === 'Female' ? 'Sow' : 'Boar';
 
         updatedList = list.map(p => {
           if (p._id === id) {
@@ -366,10 +489,10 @@ export const usePigletStore = create((set, get) => ({
               sex: finalSex,
               breed: finalBreed,
               weaningWeight: Number(weanData.weaningWeight || p.latestWeight),
-              promotedTo: destType === 'Fattening' ? (finalSex === 'Female' ? 'Sow' : 'Boar') : destType,
+              promotedTo: destModule,
               promotedAt: new Date().toISOString(),
-              sowId: (finalPurpose === 'Breeding' && destType === 'Sow') ? newRecordId : null,
-              boarId: (finalPurpose === 'Breeding' && destType === 'Boar') ? newRecordId : null
+              sowId: finalSex === 'Female' ? newRecordId : null,
+              boarId: finalSex === 'Male' ? newRecordId : null
             };
 
             updated.weightLogs.push({
@@ -386,15 +509,15 @@ export const usePigletStore = create((set, get) => ({
               previousStatus: p.status,
               newStatus: 'Weaned',
               updatedBy: weanData.enteredBy || 'System',
-              notes: `Weaned and promoted to ${destType}`,
+              notes: `Weaned and promoted to ${destModule} - ${dbPurpose} herd`,
               updatedAt: new Date().toISOString()
             });
 
             updated.promotionHistory.push({
-              type: updated.promotedTo,
+              type: destModule,
               promotedAt: new Date().toISOString(),
               promotedBy: weanData.enteredBy || 'System',
-              destinationModule: finalPurpose === 'Fattening' ? 'Fattening' : `${destType} Module`
+              destinationModule: `${destModule} Module (${dbPurpose})`
             });
 
             return updated;
@@ -406,7 +529,6 @@ export const usePigletStore = create((set, get) => ({
 
         // Update master animal list
         const animals = JSON.parse(localStorage.getItem('pinaka_animals') || '[]');
-        const resolvedType = destType === 'Fattening' ? (finalSex === 'Female' ? 'Sow' : 'Boar') : destType;
 
         const updatedAnimals = animals.map(a => {
           if (a.animalNo === target.animalNo) {
@@ -415,111 +537,109 @@ export const usePigletStore = create((set, get) => ({
               animalNo: targetAnimalNo,
               sex: finalSex,
               breed: finalBreed,
-              type: resolvedType,
-              animalType: resolvedType,
-              lifecycleStage: resolvedType,
-              purpose: finalPurpose,
+              type: destModule,
+              animalType: destModule,
+              lifecycleStage: destModule,
+              purpose: dbPurpose,
               castrationStatus: finalCastrationStatus,
               currentWeight: Number(weanData.weaningWeight || target.latestWeight),
-              currentPen: weanData.penNo || a.currentPen || 'Unassigned',
+              currentPen: cellName || a.currentPen || 'Unassigned',
               operationalStatus: 'Active',
-              sowRef: (finalPurpose === 'Breeding' && destType === 'Sow') ? newRecordId : null,
-              boarRef: (finalPurpose === 'Breeding' && destType === 'Boar') ? newRecordId : null
+              sowRef: finalSex === 'Female' ? newRecordId : null,
+              boarRef: finalSex === 'Male' ? newRecordId : null
             };
           }
           return a;
         });
         localStorage.setItem('pinaka_animals', JSON.stringify(updatedAnimals));
 
-        // Create Sow or Boar record only if Breeding
-        if (finalPurpose === 'Breeding') {
-          if (destType === 'Sow') {
-            const sows = JSON.parse(localStorage.getItem('pinaka_sows') || '[]');
-            newSowRecord = {
-              _id: newRecordId,
-              animalNo: targetAnimalNo,
-              source: weanData.source || target.source || 'WeaningPromotion',
-              pigletRef: target._id,
-              dob: target.dob,
-              breed: finalBreed,
-              sireNo: target.sireNo,
-              damNo: target.damNo,
-              birthWeight: target.birthWeight,
-              latestWeight: Number(weanData.weaningWeight || target.latestWeight),
-              penNo: weanData.penNo || target.penNo || 'Unassigned',
-              status: 'Active',
-              purpose: 'Breeding',
-              createdAt: new Date().toISOString(),
-              isDeleted: false,
-              heatHistory: [],
-              breedingHistory: [],
-              farrowingHistory: [],
-              treatmentHistory: [],
-              statusHistory: [
-                {
-                  _id: `sh_${Date.now()}`,
-                  previousStatus: 'None',
-                  newStatus: 'Active',
-                  updatedBy: weanData.enteredBy || 'System',
-                  notes: 'Imported from weaning',
-                  updatedAt: new Date().toISOString()
-                }
-              ]
-            };
-            localStorage.setItem('pinaka_sows', JSON.stringify([newSowRecord, ...sows]));
-          } else if (destType === 'Boar') {
-            const boars = JSON.parse(localStorage.getItem('pinaka_boars') || '[]');
-            newBoarRecord = {
-              _id: newRecordId,
-              animalNo: targetAnimalNo,
-              source: weanData.source || target.source || 'WeaningPromotion',
-              pigletRef: target._id,
-              dob: target.dob,
-              breed: finalBreed,
-              sireNo: target.sireNo,
-              damNo: target.damNo,
-              birthWeight: target.birthWeight,
-              latestWeight: Number(weanData.weaningWeight || target.latestWeight),
-              penNo: weanData.penNo || target.penNo || 'Unassigned',
-              status: 'Active',
-              purpose: 'Breeding',
-              castrationStatus: 'Not Castrated',
-              breedingStatus: 'Growing',
-              createdAt: new Date().toISOString(),
-              isDeleted: false,
-              pubertyDate: null,
-              firstSemenCollectionDate: null,
-              fertilityApprovalDate: null,
-              breedingReadyDate: null,
-              diseaseTestResult: 'Negative',
-              congenitalDefects: 'None',
-              rudimentaryTeats: 0,
-              serviceHistoryRefs: [],
-              fertilityAnalytics: {
-                totalServices: 0,
-                successfulPregnancies: 0,
-                failedServices: 0,
-                pregnancySuccessRate: 0,
-                totalPigletsBorn: 0,
-                averageLitterSize: 0,
-                averagePigletSurvival: 0,
-                averageWeaningCount: 0
-              },
-              healthTests: [],
-              treatmentHistory: [],
-              statusHistory: [
-                {
-                  _id: `sh_${Date.now()}`,
-                  previousStatus: 'None',
-                  newStatus: 'Active',
-                  updatedBy: weanData.enteredBy || 'System',
-                  notes: 'Imported from weaning',
-                  updatedAt: new Date().toISOString()
-                }
-              ]
-            };
-            localStorage.setItem('pinaka_boars', JSON.stringify([newBoarRecord, ...boars]));
-          }
+        // Create Sow or Boar record
+        if (finalSex === 'Female') {
+          const sows = JSON.parse(localStorage.getItem('pinaka_sows') || '[]');
+          newSowRecord = {
+            _id: newRecordId,
+            animalNo: targetAnimalNo,
+            source: 'PigletPromotion',
+            pigletRef: target._id,
+            dob: target.dob,
+            breed: finalBreed,
+            sireNo: target.sireNo,
+            damNo: target.damNo,
+            birthWeight: target.birthWeight,
+            latestWeight: Number(weanData.weaningWeight || target.latestWeight),
+            penNo: cellName,
+            status: 'Active',
+            purpose: dbPurpose,
+            createdAt: new Date().toISOString(),
+            isDeleted: false,
+            heatHistory: [],
+            breedingHistory: [],
+            farrowingHistory: [],
+            treatmentHistory: [],
+            statusHistory: [
+              {
+                _id: `sh_${Date.now()}`,
+                previousStatus: 'None',
+                newStatus: 'Active',
+                updatedBy: weanData.enteredBy || 'System',
+                notes: `Promoted from Piglet weaning to ${dbPurpose} herd`,
+                updatedAt: new Date().toISOString()
+              }
+            ]
+          };
+          localStorage.setItem('pinaka_sows', JSON.stringify([newSowRecord, ...sows]));
+        } else if (finalSex === 'Male') {
+          const boars = JSON.parse(localStorage.getItem('pinaka_boars') || '[]');
+          newBoarRecord = {
+            _id: newRecordId,
+            animalNo: targetAnimalNo,
+            source: 'PigletPromotion',
+            pigletRef: target._id,
+            dob: target.dob,
+            breed: finalBreed,
+            sireNo: target.sireNo,
+            damNo: target.damNo,
+            birthWeight: target.birthWeight,
+            latestWeight: Number(weanData.weaningWeight || target.latestWeight),
+            penNo: cellName,
+            status: 'Active',
+            purpose: dbPurpose,
+            castrationStatus: finalCastrationStatus,
+            breedingStatus: 'Growing',
+            createdAt: new Date().toISOString(),
+            isDeleted: false,
+            pubertyDate: null,
+            firstSemenCollectionDate: null,
+            fertilityApprovalDate: null,
+            breedingReadyDate: null,
+            diseaseTestResult: 'Negative',
+            congenitalDefects: 'None',
+            rudimentaryTeats: 0,
+            serviceHistoryRefs: [],
+            fertilityAnalytics: {
+              totalServices: 0,
+              successfulPregnancies: 0,
+              failedServices: 0,
+              pregnancySuccessRate: 0,
+              totalPigletsBorn: 0,
+              averageLitterSize: 0,
+              averagePigletSurvival: 0,
+              averageWeaningCount: 0
+            },
+            healthTests: [],
+            treatmentHistory: [],
+            statusHistory: [
+              {
+                _id: `sh_${Date.now()}`,
+                previousStatus: 'None',
+                newStatus: 'Active',
+                updatedBy: weanData.enteredBy || 'System',
+                notes: `Promoted from Piglet weaning to ${dbPurpose} herd`,
+                updatedAt: new Date().toISOString()
+              }
+            ]
+          };
+          localStorage.setItem('pinaka_boars', JSON.stringify([newBoarRecord, ...boars]));
         }
       }
 

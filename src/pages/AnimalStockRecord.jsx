@@ -18,12 +18,15 @@ import {
   Activity,
   Calendar,
   Layers,
-  Skull
+  Download,
+  AlertTriangle,
+  Skull,
+  Trash2
 } from 'lucide-react';
 
 export default function AnimalStockRecord() {
   const navigate = useNavigate();
-  const { animals, loading: animalsLoading, fetchAnimals, registerAnimal, updateAnimal } = useAnimalStore();
+  const { animals, loading: animalsLoading, fetchAnimals, registerAnimal, updateAnimal, deleteAnimal, deleteAllAnimals } = useAnimalStore();
   const { cells, fetchStructure } = useFarmStructureStore();
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -162,6 +165,18 @@ export default function AnimalStockRecord() {
             className="px-2 py-1 bg-sidebar border border-borderDark text-[10px] rounded hover:bg-primary/10 hover:text-primary font-bold uppercase tracking-wider transition-colors"
           >
             ✏ Edit
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if(window.confirm('Are you sure you want to delete this record?')) {
+                deleteAnimal(row._id);
+              }
+            }}
+            className="px-2 py-1 bg-sidebar border border-borderDark text-[10px] rounded hover:bg-danger/10 hover:text-danger font-bold uppercase tracking-wider transition-colors"
+            title="Delete Record"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
       )
@@ -365,12 +380,14 @@ export default function AnimalStockRecord() {
               Global source of truth for all livestock identities across the farm. Lifecycle states are inherited from this registry.
             </p>
           </div>
-          <button 
-            onClick={handleRegisterClick}
-            className="btn-primary flex items-center gap-2 text-xs py-2 px-4 whitespace-nowrap"
-          >
-            <Plus className="w-4 h-4" /> Register Animal
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={handleRegisterClick}
+              className="btn-primary flex items-center gap-2 text-xs py-2 px-4 whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" /> Register Animal
+            </button>
+          </div>
         </div>
 
         {/* KPI Row */}

@@ -175,8 +175,6 @@ const healFarrowingsList = (list) => {
       } catch (e) {}
 
       const generated = [];
-      const animals = JSON.parse(localStorage.getItem('pinaka_animals') || '[]');
-      let animalsModified = false;
 
       for (let i = 0; i < bornAlive; i++) {
         const pigletId = `PIG-${String(nextNum + i).padStart(4, '0')}`;
@@ -197,33 +195,6 @@ const healFarrowingsList = (list) => {
           breed: sowBreed,
           notes: 'Auto-healed record'
         });
-
-        // Register in master animal registry if not already present
-        if (!animals.find(a => a.animalNo === pigletId)) {
-          animals.unshift({
-            _id: `ani_pig_${Date.now()}_healed_${i}`,
-            animalNo: pigletId,
-            earTag: '',
-            dob: aDate,
-            sex,
-            breed: sowBreed,
-            currentWeight: 1.5,
-            source: 'Farm Born',
-            supplier: '',
-            lifecycleStage: 'Piglet',
-            currentPen: 'Farrowing Unit',
-            operationalStatus: 'Active',
-            operator: f.operator || 'System',
-            notes: `Born to Sow ${f.sowNo} × Boar ${f.boarNo} (Healed)`,
-            createdAt: new Date().toISOString(),
-            isDeleted: false
-          });
-          animalsModified = true;
-        }
-      }
-
-      if (animalsModified) {
-        localStorage.setItem('pinaka_animals', JSON.stringify(animals));
       }
 
       modified = true;
@@ -237,9 +208,6 @@ const healFarrowingsList = (list) => {
 
   if (modified) {
     localStorage.setItem('pinaka_farrowings', JSON.stringify(healed));
-    try {
-      useAnimalStore.getState().fetchAnimals();
-    } catch (e) {}
   }
 
   return healed;
@@ -303,10 +271,9 @@ export const useFarrowingStore = create((set, get) => ({
 
       // Sequential piglet IDs starting from the next available number
       const pigletsArray = [];
-      const pigletsList = JSON.parse(localStorage.getItem('pinaka_piglets') || '[]');
       let nextNum = getNextPigletId();
-      const animalStore = useAnimalStore.getState();
       const newFarrowingId = `far_${Date.now()}`;
+      const animalStore = useAnimalStore.getState();
 
       for (let i = 0; i < alive; i++) {
         const pigletId = formatPigletId(nextNum + i);
@@ -326,81 +293,9 @@ export const useFarrowingStore = create((set, get) => ({
           notes: ''
         };
         pigletsArray.push(piglet);
-
-        // Register in pinaka_piglets
-        const newPigletObj = {
-          _id: `p_${Date.now()}_${i}`,
-          animalNo: pigletId,
-          dob: aDate.toISOString().split('T')[0],
-          sex,
-          breed: sowBreed,
-          sireNo: data.boarNo || "UNKNOWN",
-          damNo: data.sowNo || "UNKNOWN",
-          birthWeight: 1.5,
-          weaningWeight: 0,
-          penNo: 'Farrowing Unit',
-          status: 'Lactating',
-          latestWeight: 1.5,
-          notes: `Born in farrowing litter to Sow ${data.sowNo}`,
-          farrowingId: newFarrowingId,
-          isDeleted: false,
-          createdAt: new Date().toISOString(),
-          weightLogs: [
-            {
-              _id: `w_${Date.now()}_${i}`,
-              date: aDate.toISOString().split('T')[0],
-              type: "Birth",
-              weight: 1.5,
-              notes: "Initial registered birth weight",
-              enteredBy: data.operator || "System"
-            }
-          ],
-          statusHistory: [
-            {
-              _id: `s_${Date.now()}_${i}`,
-              previousStatus: "None",
-              newStatus: "Lactating",
-              updatedBy: data.operator || "System",
-              notes: "Born in farrowing litter",
-              updatedAt: new Date().toISOString()
-            }
-          ],
-          promotionHistory: []
-        };
-        pigletsList.unshift(newPigletObj);
-
-        // Register piglet in master animal registry (non-blocking; skip if duplicate)
-        try {
-          const existing = JSON.parse(localStorage.getItem('pinaka_animals') || '[]');
-          if (!existing.find(a => a.animalNo === pigletId)) {
-            const newAnimal = {
-              _id: `ani_pig_${Date.now()}_${i}`,
-              animalNo: pigletId,
-              earTag: '',
-              dob: aDate.toISOString(),
-              sex,
-              breed: sowBreed,
-              currentWeight: 1.5,
-              source: 'Farm Born',
-              supplier: '',
-              lifecycleStage: 'Piglet',
-              currentPen: 'Farrowing Unit',
-              operationalStatus: 'Active',
-              operator: data.operator || 'System',
-              notes: `Born to Sow ${data.sowNo} × Boar ${data.boarNo}`,
-              createdAt: new Date().toISOString(),
-              isDeleted: false
-            };
-            const updatedAnimals = [newAnimal, ...existing];
-            localStorage.setItem('pinaka_animals', JSON.stringify(updatedAnimals));
-          }
-        } catch (e) { /* ignore */ }
       }
 
-      localStorage.setItem('pinaka_piglets', JSON.stringify(pigletsList));
-      try {
-        usePigletStore.getState().fetchPiglets();
-      } catch (e) {}
+      // No longer inject into pinaka_piglets or pinaka_animals here.
 
       // Refresh animal store state
       if (animalStore && animalStore.fetchAnimals) {
@@ -654,5 +549,17 @@ export const useFarrowingStore = create((set, get) => ({
       set({ error: err.message, loading: false });
       throw err;
     }
-  }
+  },
+  deleteFarrowingRecord: async (id) => {
+    set({ loading: true, error: null });
+    try {
+      const list = loadLocalFarrowings ? loadLocalFarrowings() : JSON.parse(localStorage.getItem('pinaka_farrowings') || '[]');
+      const updatedList = list.map(item => item._id === id ? { ...item, isDeleted: true } : item);
+      localStorage.setItem('pinaka_farrowings', JSON.stringify(updatedList));
+      set({ farrowings: updatedList.filter(i => !i.isDeleted), loading: false });
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
+  },
 }));

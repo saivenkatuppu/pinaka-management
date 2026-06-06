@@ -554,5 +554,16 @@ export const useAnimalStore = create((set, get) => ({
       set({ error: err.message, loading: false });
       throw err;
     }
+  },
+
+  deleteAllAnimals: async () => {
+    set({ loading: true, error: null });
+    try {
+      localStorage.setItem('pinaka_animals', JSON.stringify([]));
+      set({ animals: [], selectedAnimal: null, loading: false });
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
   }
 }));

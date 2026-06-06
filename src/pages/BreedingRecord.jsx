@@ -19,7 +19,8 @@ import {
   Calendar,
   AlertTriangle,
   Award,
-  Heart
+  Heart,
+  Trash2
 } from 'lucide-react';
 
 export default function BreedingRecord() {
@@ -32,7 +33,7 @@ export default function BreedingRecord() {
     error, 
     fetchBreedings, 
     createBreeding 
-  } = useBreedingStore();
+  , deleteBreedingRecord} = useBreedingStore();
 
   const { sows, fetchSows } = useSowStore();
   const { boars, fetchBoars } = useBoarStore();
@@ -329,6 +330,19 @@ export default function BreedingRecord() {
             title="View breeding lifecycle details"
           >
             <Eye className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if(window.confirm('Are you sure you want to delete this record?')) {
+                deleteBreedingRecord(row._id);
+              }
+            }}
+            className="p-1 hover:bg-danger/10 text-danger rounded flex items-center gap-1 transition-colors"
+            title="Delete Record"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
       )

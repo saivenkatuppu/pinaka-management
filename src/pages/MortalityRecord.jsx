@@ -7,10 +7,12 @@ import { TableSkeleton, CardSkeleton } from '../components/ui/LoadingSkeleton';
 import Modal from '../components/ui/Modal';
 import { FormField, FormGrid, FormSection } from '../components/ui/FormLayout';
 import AnimalSelect from '../components/ui/AnimalSelect';
-import { Skull, Plus, TrendingDown, AlertTriangle, Calendar } from 'lucide-react';
+import { Skull, Plus, TrendingDown, AlertTriangle, Calendar,
+  Trash2
+} from 'lucide-react';
 
 export default function MortalityRecord() {
-  const { mortalities, loading, fetchMortalities, recordMortality } = useMortalityStore();
+  const { mortalities, loading, fetchMortalities, recordMortality , deleteMortalityRecord} = useMortalityStore();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [formData, setFormData] = useState({
     animalId: '', lifecycleStage: 'Grower', penNumber: '', sex: 'Male',
@@ -66,7 +68,29 @@ export default function MortalityRecord() {
     {
       header: "Recorded By", accessor: "recordedBy", sortable: true,
       render: (val) => <span className="text-[11px] text-textSecondary font-semibold">{val || 'System'}</span>
-    }
+    },
+    {
+      header: "Actions",
+      accessor: "_id",
+      sortable: false,
+      render: (val, row) => (
+        <div className="flex items-center gap-2">
+          
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if(window.confirm('Are you sure you want to delete this record?')) {
+                deleteMortalityRecord(row._id);
+              }
+            }}
+            className="p-1 hover:bg-danger/10 text-danger rounded flex items-center gap-1 transition-colors"
+            title="Delete Record"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )
+    },
   ], []);
 
   const handleAdd = async (e) => {

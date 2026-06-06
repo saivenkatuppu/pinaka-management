@@ -147,5 +147,17 @@ export const useSaleStore = create((set, get) => ({
       set({ error: err.message, loading: false });
       throw err;
     }
-  }
+  },
+  deleteSaleRecord: async (id) => {
+    set({ loading: true, error: null });
+    try {
+      const list = loadLocalSales ? loadLocalSales() : JSON.parse(localStorage.getItem('pinaka_sales') || '[]');
+      const updatedList = list.map(item => item._id === id ? { ...item, isDeleted: true } : item);
+      localStorage.setItem('pinaka_sales', JSON.stringify(updatedList));
+      set({ sales: updatedList.filter(i => !i.isDeleted), loading: false });
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
+  },
 }));

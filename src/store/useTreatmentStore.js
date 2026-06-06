@@ -108,5 +108,17 @@ export const useTreatmentStore = create((set, get) => ({
       set({ error: err.message, loading: false });
       throw err;
     }
-  }
+  },
+  deleteTreatmentRecord: async (id) => {
+    set({ loading: true, error: null });
+    try {
+      const list = loadLocalTreatments ? loadLocalTreatments() : JSON.parse(localStorage.getItem('pinaka_treatments') || '[]');
+      const updatedList = list.map(item => item._id === id ? { ...item, isDeleted: true } : item);
+      localStorage.setItem('pinaka_treatments', JSON.stringify(updatedList));
+      set({ treatments: updatedList.filter(i => !i.isDeleted), loading: false });
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
+  },
 }));

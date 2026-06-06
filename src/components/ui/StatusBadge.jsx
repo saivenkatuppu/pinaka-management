@@ -19,6 +19,7 @@ export default function StatusBadge({ status }) {
     case 'RECOVERED':
     case 'EXCELLENT':
     case 'GOOD':
+    case 'WEANING READY':
       badgeClass = "badge-success";
       break;
 
@@ -50,7 +51,6 @@ export default function StatusBadge({ status }) {
     case 'SLAUGHTERED':
     case 'POOR':
     case 'CRITICAL':
-    case 'UNDER TREATMENT':
       badgeClass = "badge-danger";
       break;
 
@@ -64,6 +64,7 @@ export default function StatusBadge({ status }) {
     case 'INCOME':
     case 'AVAILABLE':
     case 'BREEDING CANDIDATE':
+    case 'UNDER TREATMENT':
     case 'VACCINE':
     case 'ANTIBIOTIC':
     case 'DEWORMER':

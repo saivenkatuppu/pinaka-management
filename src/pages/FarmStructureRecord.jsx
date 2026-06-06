@@ -82,10 +82,98 @@ export default function FarmStructureRecord() {
   }, [fetchStructure, fetchAnimals]);
 
   // Safe Store Data fallback
-  const farmsList = useMemo(() => farms || [], [farms]);
-  const shedsList = useMemo(() => sheds || [], [sheds]);
-  const cellsList = useMemo(() => cells || [], [cells]);
-  const animalsList = useMemo(() => animals || [], [animals]);
+  const farmsList = useMemo(() => farms || [    {
+      header: "Actions",
+      accessor: "_id",
+      sortable: false,
+      render: (val, row) => (
+        <div className="flex items-center gap-2">
+          
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if(window.confirm('Are you sure you want to delete this record?')) {
+                deleteCell(row._id);
+              }
+            }}
+            className="p-1 hover:bg-danger/10 text-danger rounded flex items-center gap-1 transition-colors"
+            title="Delete Record"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )
+    },
+  ], [farms]);
+  const shedsList = useMemo(() => sheds || [    {
+      header: "Actions",
+      accessor: "_id",
+      sortable: false,
+      render: (val, row) => (
+        <div className="flex items-center gap-2">
+          
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if(window.confirm('Are you sure you want to delete this record?')) {
+                deleteCell(row._id);
+              }
+            }}
+            className="p-1 hover:bg-danger/10 text-danger rounded flex items-center gap-1 transition-colors"
+            title="Delete Record"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )
+    },
+  ], [sheds]);
+  const cellsList = useMemo(() => cells || [    {
+      header: "Actions",
+      accessor: "_id",
+      sortable: false,
+      render: (val, row) => (
+        <div className="flex items-center gap-2">
+          
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if(window.confirm('Are you sure you want to delete this record?')) {
+                deleteCell(row._id);
+              }
+            }}
+            className="p-1 hover:bg-danger/10 text-danger rounded flex items-center gap-1 transition-colors"
+            title="Delete Record"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )
+    },
+  ], [cells]);
+  const animalsList = useMemo(() => animals || [    {
+      header: "Actions",
+      accessor: "_id",
+      sortable: false,
+      render: (val, row) => (
+        <div className="flex items-center gap-2">
+          
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if(window.confirm('Are you sure you want to delete this record?')) {
+                deleteCell(row._id);
+              }
+            }}
+            className="p-1 hover:bg-danger/10 text-danger rounded flex items-center gap-1 transition-colors"
+            title="Delete Record"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )
+    },
+  ], [animals]);
 
   // Current active farm (defaulting to the first one)
   const currentFarm = useMemo(() => farmsList[0] || null, [farmsList]);

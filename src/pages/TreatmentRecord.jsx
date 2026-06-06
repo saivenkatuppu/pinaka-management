@@ -9,10 +9,12 @@ import Modal from '../components/ui/Modal';
 import DatePicker from '../components/ui/DatePicker';
 import { FormField, FormGrid, FormSection } from '../components/ui/FormLayout';
 import AnimalSelect from '../components/ui/AnimalSelect';
-import { Stethoscope, Plus, Activity, AlertTriangle, CheckCircle, Clock, Search, Heart, Shield, RefreshCw } from 'lucide-react';
+import { Stethoscope, Plus, Activity, AlertTriangle, CheckCircle, Clock, Search, Heart, Shield, RefreshCw,
+  Trash2
+} from 'lucide-react';
 
 export default function TreatmentRecord() {
-  const { treatments, loading, fetchTreatments, registerTreatment, updateTreatmentStatus } = useTreatmentStore();
+  const { treatments, loading, fetchTreatments, registerTreatment, updateTreatmentStatus , deleteTreatmentRecord} = useTreatmentStore();
   const { medicines, fetchMedicines } = useMedicineStore();
   
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -121,7 +123,29 @@ export default function TreatmentRecord() {
           {['Under Observation', 'Under Treatment', 'Recovering', 'Recovered', 'Critical', 'Dead'].map(s => <option key={s}>{s}</option>)}
         </select>
       )
-    }
+    },
+    {
+      header: "Actions",
+      accessor: "_id",
+      sortable: false,
+      render: (val, row) => (
+        <div className="flex items-center gap-2">
+          
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if(window.confirm('Are you sure you want to delete this record?')) {
+                deleteTreatmentRecord(row._id);
+              }
+            }}
+            className="p-1 hover:bg-danger/10 text-danger rounded flex items-center gap-1 transition-colors"
+            title="Delete Record"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )
+    },
   ], [medicines]);
 
   const handleAdd = async (e) => {

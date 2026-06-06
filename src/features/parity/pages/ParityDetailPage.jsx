@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import MainLayout from '../../../components/layout/MainLayout';
 import { useFarrowingStore } from '../../../store/useFarrowingStore';
 import { useMortalityStore } from '../../../store/useMortalityStore';
+import { usePigletStore } from '../../../store/usePigletStore';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useSettingsStore } from '../../../store/useSettingsStore';
 import Modal from '../../../components/ui/Modal';
@@ -50,6 +51,7 @@ export default function ParityDetailPage() {
   } = useFarrowingStore();
 
   const { recordMortality } = useMortalityStore();
+  const { promoteFromLitter } = usePigletStore();
 
   // ── Local UI state ─────────────────────────────────────────────────────────
   const [selectedPiglet, setSelectedPiglet] = useState(null);
@@ -162,9 +164,29 @@ export default function ParityDetailPage() {
     }
   };
 
-  // ── Handlers: Promote to Grower (Redirects to Piglet weaning flow) ──────────
-  const handleOpenPromote = (piglet) => {
-    navigate(`/piglets?wean=${piglet.pigletId}`);
+  // ── Handlers: Promote to Piglet Module ──────────
+  const handleOpenPromote = async (piglet) => {
+    setActionError('');
+    try {
+      const newRecord = await promoteFromLitter({
+        animalNo: piglet.pigletId,
+        dob: piglet.dob || litter.actualFarrowingDate,
+        sex: piglet.sex,
+        breed: piglet.breed || litter.breed,
+        sireNo: litter.boarNo,
+        damNo: litter.sowNo,
+        farrowingId: litter._id,
+        birthWeight: piglet.birthWeight,
+        penNo: 'Farrowing Unit',
+        enteredBy: user?.name || 'System'
+      });
+      // Mark as promoted in the farrowing store piglet array
+      useFarrowingStore.getState().syncPigletWeaningInLitter(litter._id, piglet.pigletId, newRecord.animalNo);
+      
+      navigate(`/piglets`);
+    } catch (err) {
+      setActionError(err.message);
+    }
   };
 
   // ── Loading state ──────────────────────────────────────────────────────────
@@ -272,7 +294,7 @@ export default function ParityDetailPage() {
                       const pigletDob = piglet.dob || litter.actualFarrowingDate;
                       const ageDays = Math.floor((Date.now() - new Date(pigletDob).getTime()) / (1000 * 60 * 60 * 24));
                       const isWeaned = litter.lactationStatus === 'Weaned' || ageDays >= weaningAge;
-                      const canPromote = piglet.status === 'Nursing' && !piglet.promotedToGrower && isWeaned;
+                      const canPromote = piglet.status === 'Nursing' && !piglet.promotedToGrower;
                       const canDie = piglet.status === 'Nursing';
 
                       return (
@@ -316,10 +338,10 @@ export default function ParityDetailPage() {
                               <button
                                 onClick={() => handleOpenPromote(piglet)}
                                 disabled={!canPromote}
-                                title="Promote to Grower"
+                                title="Promote to Piglet Module"
                                 className="px-2 py-1 bg-sidebar border border-warning/30 rounded text-[10px] uppercase font-bold text-warning hover:bg-warning/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                               >
-                                <ArrowUpRight className="w-3 h-3 inline mr-0.5" /> Promote
+                                <ArrowUpRight className="w-3 h-3 inline mr-0.5" /> Promote To Piglet Module
                               </button>
                             </div>
                           </td>

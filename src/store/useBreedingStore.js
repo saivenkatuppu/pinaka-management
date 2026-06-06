@@ -324,5 +324,17 @@ export const useBreedingStore = create((set, get) => ({
       set({ error: err.message, loading: false });
       throw err;
     }
-  }
+  },
+  deleteBreedingRecord: async (id) => {
+    set({ loading: true, error: null });
+    try {
+      const list = loadLocalBreedings ? loadLocalBreedings() : JSON.parse(localStorage.getItem('pinaka_breedings') || '[]');
+      const updatedList = list.map(item => item._id === id ? { ...item, isDeleted: true } : item);
+      localStorage.setItem('pinaka_breedings', JSON.stringify(updatedList));
+      set({ breedings: updatedList.filter(i => !i.isDeleted), loading: false });
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
+  },
 }));

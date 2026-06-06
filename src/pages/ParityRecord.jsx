@@ -5,12 +5,14 @@ import { useFarrowingStore } from '../store/useFarrowingStore';
 import DataTable from '../components/ui/DataTable';
 import StatusBadge from '../components/ui/StatusBadge';
 import { TableSkeleton } from '../components/ui/LoadingSkeleton';
-import { Eye, Syringe, Baby, Scale, ArrowUpRight } from 'lucide-react';
+import { Eye, Syringe, Baby, Scale, ArrowUpRight,
+  Trash2
+} from 'lucide-react';
 
 export default function ParityRecord() {
   const navigate = useNavigate();
 
-  const { farrowings, loading, fetchFarrowings } = useFarrowingStore();
+  const { farrowings, loading, fetchFarrowings , deleteFarrowingRecord} = useFarrowingStore();
 
   useEffect(() => {
     fetchFarrowings();

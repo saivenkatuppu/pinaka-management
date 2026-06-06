@@ -418,6 +418,19 @@ export default function SowRecord() {
           >
             <Eye className="w-3.5 h-3.5" />
           </button>
+
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if(window.confirm('Are you sure you want to delete this record?')) {
+                deleteSow(row._id);
+              }
+            }}
+            className="p-1 hover:bg-danger/10 text-danger rounded flex items-center gap-1 transition-colors"
+            title="Delete Record"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
           {canEdit && (
             <>
               <button 

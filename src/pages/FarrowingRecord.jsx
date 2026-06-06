@@ -22,7 +22,8 @@ import {
   TrendingUp,
   Clock,
   ArrowRight,
-  Database
+  Database,
+  Trash2
 } from 'lucide-react';
 
 export default function FarrowingRecord() {
@@ -35,7 +36,7 @@ export default function FarrowingRecord() {
     error, 
     fetchFarrowings, 
     createFarrowingRecord 
-  } = useFarrowingStore();
+  , deleteFarrowingRecord} = useFarrowingStore();
 
   const { sows, fetchSows } = useSowStore();
   const { breedings, fetchBreedings } = useBreedingStore();
@@ -242,14 +243,29 @@ export default function FarrowingRecord() {
       accessor: "_id",
       sortable: false,
       render: (val, row) => (
-        <button 
+        <div className="flex items-center gap-2">
+<button 
           onClick={() => navigate(`/farrowing/${row._id}`)}
           className="p-1 hover:bg-cardBg hover:text-primary rounded text-textSecondary flex items-center gap-1"
           title="View Farrowing Detail"
         >
           <Eye className="w-3.5 h-3.5" /> <span className="text-[10px] uppercase font-bold tracking-wider">View</span>
         </button>
-      )
+
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if(window.confirm('Are you sure you want to delete this record?')) {
+                deleteFarrowingRecord(row._id);
+              }
+            }}
+            className="p-1 hover:bg-danger/10 text-danger rounded flex items-center gap-1 transition-colors"
+            title="Delete Record"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+      </div>
+)
     }
   ];
 

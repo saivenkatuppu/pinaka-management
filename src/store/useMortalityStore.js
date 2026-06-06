@@ -255,5 +255,17 @@ export const useMortalityStore = create((set, get) => ({
       set({ error: err.message, loading: false });
       throw err;
     }
-  }
+  },
+  deleteMortalityRecord: async (id) => {
+    set({ loading: true, error: null });
+    try {
+      const list = loadLocalMortalitys ? loadLocalMortalitys() : JSON.parse(localStorage.getItem('pinaka_mortalityRecords') || '[]');
+      const updatedList = list.map(item => item._id === id ? { ...item, isDeleted: true } : item);
+      localStorage.setItem('pinaka_mortalityRecords', JSON.stringify(updatedList));
+      set({ mortalityRecords: updatedList.filter(i => !i.isDeleted), loading: false });
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
+  },
 }));
