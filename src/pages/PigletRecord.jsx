@@ -379,15 +379,14 @@ export default function PigletRecord() {
       setFormError('Weaning weight must be positive.');
       return;
     }
-
+    try {
       await weanPigletAndPromote(selectedAnimal._id, {
         ...weanData,
-        breed: finalBreed,
         enteredBy: weanData.enteredBy
       });
       setIsWeanOpen(false);
-      alert('Piglet successfully weaned, operational profile completed and promoted.');
-      navigate(weanData.destination === 'Sow' ? '/sows' : (weanData.destination === 'Boar' ? '/boars' : '/stock'));
+      const dbPurpose = weanData.herdPurpose === 'Breeding Program' ? 'Breeding' : 'Fattening';
+      navigate(selectedAnimal.sex === 'Female' ? '/sows' : '/boars', { state: { purpose: dbPurpose } });
     } catch (err) {
       setFormError(err.message);
     }
@@ -704,7 +703,7 @@ export default function PigletRecord() {
                             task.status === 'Overdue' ? 'bg-danger/20 text-danger border border-danger/50 animate-pulse' :
                             'bg-warning/10 text-warning border border-warning/20'
                           }`}>
-                            {task.status} (Day {task.dueDay})
+                            {task.status === 'Overdue' ? `OVERDUE (DAY ${task.age})` : `${task.status} (Day ${task.dueDay})`}
                           </span>
                         </td>
                         <td className="p-3">
@@ -993,7 +992,7 @@ export default function PigletRecord() {
               <div>
                 <span className="font-extrabold uppercase text-[10px] text-textPrimary tracking-wider">Operational Promotion</span>
                 <p className="text-[11px] text-textSecondary mt-0.5 leading-normal">
-                  Promotes piglet <span className="font-mono font-bold text-textPrimary">{selectedAnimal?.animalNo}</span> to Sows (if Female) or Boars (if Male). Updates status in Master Animal Registry.
+                  Creates a Sow or Boar profile based on gender, assigns the selected pen, updates Farm Structure occupancy, and moves the piglet into the appropriate Breeding or Fattening category.
                 </p>
               </div>
             </div>

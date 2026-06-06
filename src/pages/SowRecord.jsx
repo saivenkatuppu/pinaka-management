@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import MainLayout from '../components/layout/MainLayout';
 import DatePicker from '../components/ui/DatePicker';
 import { useSowStore } from '../store/useSowStore';
@@ -30,6 +30,7 @@ import {
 
 export default function SowRecord() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuthStore();
   const { heatCycleDuration, lactationDuration, gestationDuration } = useSettingsStore(state => state.lifecycle);
   const { 
@@ -44,7 +45,7 @@ export default function SowRecord() {
 
   const [isStatusOpen, setIsStatusOpen] = useState(false);
   const [selectedSow, setSelectedSow] = useState(null);
-  const [purposeFilter, setPurposeFilter] = useState('All');
+  const [purposeFilter, setPurposeFilter] = useState(location.state?.purpose || 'All');
   
   const filteredSows = useMemo(() => {
     if (purposeFilter === 'All') return sows;

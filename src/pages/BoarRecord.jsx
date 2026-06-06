@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import MainLayout from '../components/layout/MainLayout';
 import DatePicker from '../components/ui/DatePicker';
 import { useBoarStore } from '../store/useBoarStore';
@@ -30,6 +30,7 @@ import {
 
 export default function BoarRecord() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuthStore();
   const { 
     boars, 
@@ -47,7 +48,7 @@ export default function BoarRecord() {
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [viewingBoar, setViewingBoar] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
-  const [purposeFilter, setPurposeFilter] = useState('All');
+  const [purposeFilter, setPurposeFilter] = useState(location.state?.purpose || 'All');
   
   const filteredBoars = useMemo(() => {
     if (purposeFilter === 'All') return boars;

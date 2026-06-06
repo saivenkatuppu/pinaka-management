@@ -414,7 +414,6 @@ export const usePigletStore = create((set, get) => ({
       let newBoarRecord = null;
 
       try {
-        // Attempt MERN API promote call
         const response = await client.post(`/piglets/${id}/wean-promote`, weanData, { skipAuthRedirect: true });
         if (response && response.data) {
           updatedPigletRecord = response.data.piglet;
@@ -436,8 +435,6 @@ export const usePigletStore = create((set, get) => ({
         updatedList = list.map(p => p._id === id ? updatedPigletRecord : p);
         matched = updatedPigletRecord;
 
-        // Save promoted local records
-        // Grower records are handled differently, no separate local store needed here
         if (newSowRecord) {
           const sows = JSON.parse(localStorage.getItem('pinaka_sows') || '[]');
           localStorage.setItem('pinaka_sows', JSON.stringify([newSowRecord, ...sows]));
@@ -447,7 +444,6 @@ export const usePigletStore = create((set, get) => ({
           localStorage.setItem('pinaka_boars', JSON.stringify([newBoarRecord, ...boars]));
         }
       } else {
-        // Fallback local logic
         const destPrefix = target.sex === 'Female' ? 'sow' : 'boar';
         const newRecordId = `${destPrefix}_${Date.now()}`;
 
@@ -457,10 +453,13 @@ export const usePigletStore = create((set, get) => ({
         const finalCastrationStatus = finalSex === 'Male' ? (weanData.castrationStatus || 'Not Castrated') : 'N/A';
 
         const targetAnimalNo = weanData.customAnimalNo ? weanData.customAnimalNo.toUpperCase().trim() : target.animalNo;
+        
+        // Check Sows and Boars for Duplicate ID instead of animals array
         if (weanData.customAnimalNo && targetAnimalNo !== target.animalNo) {
-          const animals = JSON.parse(localStorage.getItem('pinaka_animals') || '[]');
-          if (animals.some(a => a.animalNo === targetAnimalNo && !a.isDeleted)) {
-            throw new Error(`Animal No '${targetAnimalNo}' is already registered in registry.`);
+          const sows = JSON.parse(localStorage.getItem('pinaka_sows') || '[]');
+          const boars = JSON.parse(localStorage.getItem('pinaka_boars') || '[]');
+          if (sows.some(s => s.animalNo === targetAnimalNo && !s.isDeleted) || boars.some(b => b.animalNo === targetAnimalNo && !b.isDeleted)) {
+            throw new Error(`Animal No '${targetAnimalNo}' is already registered in Sow or Boar registry.`);
           }
         }
 
@@ -526,32 +525,6 @@ export const usePigletStore = create((set, get) => ({
         });
 
         matched = updatedList.find(p => p._id === id);
-
-        // Update master animal list
-        const animals = JSON.parse(localStorage.getItem('pinaka_animals') || '[]');
-
-        const updatedAnimals = animals.map(a => {
-          if (a.animalNo === target.animalNo) {
-            return {
-              ...a,
-              animalNo: targetAnimalNo,
-              sex: finalSex,
-              breed: finalBreed,
-              type: destModule,
-              animalType: destModule,
-              lifecycleStage: destModule,
-              purpose: dbPurpose,
-              castrationStatus: finalCastrationStatus,
-              currentWeight: Number(weanData.weaningWeight || target.latestWeight),
-              currentPen: cellName || a.currentPen || 'Unassigned',
-              operationalStatus: 'Active',
-              sowRef: finalSex === 'Female' ? newRecordId : null,
-              boarRef: finalSex === 'Male' ? newRecordId : null
-            };
-          }
-          return a;
-        });
-        localStorage.setItem('pinaka_animals', JSON.stringify(updatedAnimals));
 
         // Create Sow or Boar record
         if (finalSex === 'Female') {
@@ -650,9 +623,8 @@ export const usePigletStore = create((set, get) => ({
         loading: false
       });
 
-      // Dynamic imports to hydrate stores
       try {
-        if (weanData.sex === 'Female') {
+        if (weanData.sex === 'Female' || target.sex === 'Female') {
           const { useSowStore } = await import('./useSowStore');
           await useSowStore.getState().fetchSows();
         } else {
@@ -669,6 +641,8 @@ export const usePigletStore = create((set, get) => ({
       throw err;
     }
   },
+
+  
 
   activatePiglet: async (animalNo, notes = '') => {
     set({ loading: true, error: null });
